@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import logo from "@/assets/image.png"; // Import the logo
 
 const navItems = [
   { id: "meet-us", label: "Meet Us" },
@@ -43,25 +44,24 @@ export const Navigation = () => {
   return (
     <nav className="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-center py-4 text-sm">
-          <span className="text-foreground mr-8">
-            Color Code for our Blue Color (#00A0E3)
-          </span>
-        </div>
-        <div className="flex items-center justify-center gap-8 pb-4 flex-wrap">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => scrollToSection(item.id)}
-              className={`transition-colors ${
-                activeSection === item.id
-                  ? "text-foreground font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between py-4 text-sm">
+          <img src={logo} alt="Company Logo" className="h-16 w-auto" /> {/* Adjusted size and removed padding for better integration */}
+          {/* Removed color code line */}
+          <div className="flex items-center justify-center gap-8 flex-wrap">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => scrollToSection(item.id)}
+                className={`transition-colors ${
+                  activeSection === item.id
+                    ? "text-foreground font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </nav>
