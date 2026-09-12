@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const AUTH_COOKIE = "tg_auth";
 
-const PUBLIC_PATHS = ["/gate", "/login"];
+const PUBLIC_PATHS = ["/", "/gate", "/login"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -11,10 +11,6 @@ export function middleware(request: NextRequest) {
 
   if (pathname.startsWith("/api/login") || pathname.startsWith("/api/backend")) {
     return NextResponse.next();
-  }
-
-  if (pathname === "/") {
-    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   const isPublic = PUBLIC_PATHS.some(

@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
-import logo from "@/assets/image.png"; // Import the logo
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const navItems = [
   { id: "semester-book-portal", label: "Semester Book Portal" },
@@ -12,12 +14,13 @@ const navItems = [
   { id: "reach-us", label: "Reach Us" },
 ];
 
-export const Navigation = () => {
+export function Navigation() {
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState("semester-book-portal");
 
   useEffect(() => {
     const handleScroll = () => {
-      const sections = navItems.map(item => document.getElementById(item.id));
+      const sections = navItems.map((item) => document.getElementById(item.id));
       const scrollPosition = window.scrollY + 200;
 
       for (let i = sections.length - 1; i >= 0; i--) {
@@ -33,16 +36,15 @@ export const Navigation = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const scrollToSection = (id: string) => {
+  const onNavClick = (id: string) => {
     if (id === "semester-book-portal") {
-      window.location.href = "/login";
+      router.push("/login");
       return;
     }
     const element = document.getElementById(id);
     if (element) {
       const offset = 80;
-      const elementPosition = element.offsetTop - offset;
-      window.scrollTo({ top: elementPosition, behavior: "smooth" });
+      window.scrollTo({ top: element.offsetTop - offset, behavior: "smooth" });
     }
   };
 
@@ -50,17 +52,17 @@ export const Navigation = () => {
     <nav className="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between py-4 text-sm">
-          <img src={logo} alt="Company Logo" className="h-16 w-auto" /> {/* Adjusted size and removed padding for better integration */}
-          {/* Removed color code line */}
+          <img src="/negraphics/image.png" alt="Company Logo" className="h-16 w-auto" />
           <div className="flex items-center justify-center gap-8 flex-wrap">
             {navItems.map((item) => (
               <button
                 key={item.id}
-                onClick={() => scrollToSection(item.id)}
+                type="button"
+                onClick={() => onNavClick(item.id)}
                 className={`transition-colors ${
                   activeSection === item.id
-                    ? "text-foreground font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "ng-text-fg font-semibold"
+                    : "ng-text-muted hover:ng-text-fg"
                 }`}
               >
                 {item.label}
@@ -71,4 +73,4 @@ export const Navigation = () => {
       </div>
     </nav>
   );
-};
+}

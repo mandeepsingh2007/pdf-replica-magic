@@ -26,7 +26,6 @@ import neg_cover_30 from "@/assets/neg_cover_30.jpg";
 import corporateDesignImage from "@/assets/Screenshot 2025-10-31 203723.png";
 
 import { useState, useEffect } from "react";
-import { TEST_GENERATOR_LOGIN_URL } from "@/lib/test-generator-url";
 
 const slideshowImages = [
   neg_cover_11,
@@ -99,7 +98,7 @@ const Index = () => {
                   Teachers can sign in to create custom question papers, unit tests, and answer keys
                   from your semester book content in seconds.
                 </p>
-                <CTAButton onClick={() => (window.location.href = TEST_GENERATOR_LOGIN_URL)}>
+                <CTAButton onClick={() => (window.location.href = "/login")}>
                   OPEN TEST GENERATOR
                 </CTAButton>
               </div>
