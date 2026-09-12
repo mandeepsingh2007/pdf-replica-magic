@@ -51,7 +51,7 @@ def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "build": "gen-job-persist-1",
+        "build": "render-oom-skip-expand-1",
     }
 
 

@@ -20,6 +20,7 @@ RUN if [ -f /app/backend/test_generator.db.deploy ]; then \
 
 ENV PYTHONPATH=/app/backend
 ENV PYTHONUNBUFFERED=1
+ENV SKIP_IMAGE_EXPAND=1
 ENV DATABASE_URL=sqlite+aiosqlite:////data/test_generator.db
 
 RUN mkdir -p /data /app/backend/uploads

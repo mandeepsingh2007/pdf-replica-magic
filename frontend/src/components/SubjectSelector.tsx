@@ -198,6 +198,7 @@ export default function SubjectSelector({
 
   const pollStatus = (taskId: string) => {
     let badPolls = 0;
+    const maxBadPolls = 240;
     const interval = setInterval(async () => {
       try {
         const res = await apiFetch(`${API_BASE}/status/${taskId}`);
@@ -213,11 +214,14 @@ export default function SubjectSelector({
 
         if (!res.ok) {
           badPolls += 1;
-          if (badPolls >= 45) {
+          if (res.status === 502 || res.status === 503) {
+            setCurrentStep("Server busy or restarting — still trying…");
+          }
+          if (badPolls >= maxBadPolls) {
             clearInterval(interval);
             setStep("failed");
             setErrorMsg(
-              `Could not reach the server (${res.status}). Wait a minute and try generating again.`
+              `Could not reach the server (${res.status}). Generation can take 3–5 minutes on free hosting — wait and try again.`
             );
           }
           return;

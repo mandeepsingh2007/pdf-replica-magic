@@ -25,6 +25,17 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def should_expand_stacked_images() -> bool:
+    """PIL/numpy panel splitting can OOM Render's 512MB web instance — skip there by default."""
+    if os.getenv("SKIP_IMAGE_EXPAND") == "1":
+        return False
+    if os.getenv("SKIP_IMAGE_EXPAND") == "0":
+        return True
+    if os.getenv("RENDER"):
+        return False
+    return True
+
+
 async def expand_stacked_images(
     db: AsyncSession, document_id: int, images: list[dict]
 ) -> list[dict]:
@@ -47,7 +58,7 @@ async def expand_stacked_images(
             expanded.append(img)
             continue
 
-        panels = split_illustration_file(path)
+        panels = await asyncio.to_thread(split_illustration_file, path)
         if len(panels) < 2:
             expanded.append(img)
             continue
@@ -201,8 +212,12 @@ async def generate_test_async(request_data: dict, task_id: str):
                         ):
                             filtered_images.append(img)
                     image_metadata = filtered_images
-            if document_id and os.getenv("SKIP_IMAGE_EXPAND") != "1":
+            if document_id and should_expand_stacked_images():
                 image_metadata = await expand_stacked_images(db, document_id, image_metadata)
+            elif document_id and os.getenv("RENDER"):
+                logger.info(
+                    "Skipping stacked-image expand on Render (set SKIP_IMAGE_EXPAND=0 to force)"
+                )
             logger.info(
                 "Chapter scope: %s | %d images for picture-match",
                 chapter_scope or "all chapters",

@@ -10,7 +10,12 @@ Vercel proxies `/api/backend/*` to Render — no extra CORS setup for the browse
 - [Render](https://render.com) account (free)
 - **GEMINI_API_KEY** (same as local `.env`)
 
-**Free tier limits:** Render sleeps after ~15 min idle (first request slow). SQLite on Render survives restarts but can reset on **redeploy** — keep a copy of `test_generator.db.deploy`.
+**Free tier limits (important for test generation):**
+
+- **512 MB RAM** — heavy work (PIL image splitting, big LLM batches) can **OOM-kill** the container → brief **502** then a fresh instance.
+- **Ephemeral disk** — `/data/test_generator.db` and in-flight jobs are **lost on restart/redeploy** unless you use a **paid instance + persistent disk** ([Render disks docs](https://render.com/docs/disks)) or **Postgres** for job state.
+- **Production pattern:** keep the web service thin; run long jobs on a **Background Worker + queue** ([Render workers](https://render.com/docs/background-workers)). This app skips runtime image-panel splitting on Render (`SKIP_IMAGE_EXPAND=1`) so generation stays in RAM budget.
+- Render sleeps after ~15 min idle (first request slow). Keep `test_generator.db.deploy` in git as the source of truth.
 
 ---
 
