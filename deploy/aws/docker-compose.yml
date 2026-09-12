@@ -1,0 +1,14 @@
+# Run from repo root on EC2: docker compose -f deploy/aws/docker-compose.yml up -d --build
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: test-generator-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - /opt/test-generator/.env
+    volumes:
+      - /opt/test-generator/data:/data

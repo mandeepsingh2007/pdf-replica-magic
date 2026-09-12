@@ -1,4 +1,10 @@
-# Free deploy — Frontend (Vercel) + Backend (Render)
+# Free deploy — Frontend (Vercel) + Backend (Render or AWS)
+
+**AWS free tier (EC2 + persistent disk):** see **[DEPLOY-AWS.md](./DEPLOY-AWS.md)**.
+
+---
+
+# Render backend (default doc below)
 
 Login stays on **Vercel**. Test generation API runs on **Render** (free tier).  
 Vercel proxies `/api/backend/*` to Render — no extra CORS setup for the browser.
