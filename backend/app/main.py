@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import app.models  # noqa: F401 — register all ORM models before Subject relationships resolve
+
 from app.core.config import settings
 from app.api.router import api_router
 from app.db.bootstrap import ensure_sqlite_seed
