@@ -12,6 +12,12 @@ services:
         value: "1"
       - key: SKIP_IMAGE_EXPAND
         value: "1"
+      - key: SKIP_RUNTIME_VLM
+        value: "1"
+      - key: LLM_MAX_CONCURRENT
+        value: "1"
+      - key: MAX_LLM_CONTEXT_CHARS
+        value: "8000"
       - key: DATABASE_URL
         value: sqlite+aiosqlite:////data/test_generator.db
       - key: GEMINI_API_KEY

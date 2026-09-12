@@ -1,7 +1,9 @@
+import gc
 import json
 import logging
 import os
 import random
+import re
 from typing import Callable, Awaitable
 
 from app.schemas.question_schemas import (
@@ -14,7 +16,7 @@ from app.schemas.question_schemas import (
     ShortAnswerListSchema,
 )
 from app.services.llm_service import generate_structured_output
-from app.services.vlm_service import short_label_for_image
+from app.services.vlm_service import is_placeholder_description, short_label_for_image
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -311,16 +313,37 @@ def _dedupe_labels(labels: list[str]) -> list[str]:
     return result
 
 
+def runtime_vision_enabled() -> bool:
+    """Gemini vision + image bytes OOM Render free tier (512MB) during picture-match."""
+    if os.getenv("SKIP_RUNTIME_VLM") == "1":
+        return False
+    if os.getenv("SKIP_RUNTIME_VLM") == "0":
+        return True
+    return not os.getenv("RENDER")
+
+
+def _fallback_label_from_image(img: dict) -> str:
+    desc = (img.get("description") or img.get("caption") or "").strip()
+    if desc and len(desc) >= 3 and not is_placeholder_description(desc):
+        return desc[:40]
+    path = img.get("image_path") or ""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    stem = re.sub(r"^PDF\d+_P\d+_IMG\d+", "Figure", stem, flags=re.I)
+    stem = stem.replace("_", " ").strip() or "Figure"
+    return stem[:40]
+
+
 async def _labels_for_images(selected: list[dict]) -> list[str]:
-    """Derive one short label per image directly from the picture content."""
+    """One short label per image — vision API only when not on memory-constrained hosting."""
     labels: list[str] = []
     for img in selected:
-        path = img.get("image_path")
-        if path and os.path.isfile(path):
-            label = await short_label_for_image(path)
-        else:
-            label = (img.get("description") or img.get("caption") or "Figure")[:40]
-        labels.append(label)
+        if runtime_vision_enabled():
+            path = img.get("image_path")
+            if path and os.path.isfile(path):
+                label = await short_label_for_image(path)
+                labels.append(label or _fallback_label_from_image(img))
+                continue
+        labels.append(_fallback_label_from_image(img))
     return _dedupe_labels(labels)
 
 
@@ -670,5 +693,9 @@ async def generate_all_types(
 
         all_questions.extend(picked)
         logger.info("%s: generated %d, kept %d", label, len(result), len(picked))
+        del result
+        del picked
+        del context
+        gc.collect()
 
     return all_questions

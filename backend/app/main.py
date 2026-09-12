@@ -51,7 +51,7 @@ def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "build": "render-oom-skip-expand-1",
+        "build": "render-picture-match-novlm-1",
     }
 
 

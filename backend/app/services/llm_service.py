@@ -3,13 +3,15 @@ import google.generativeai as genai
 import json
 import asyncio
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 if settings.LLM_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
-llm_semaphore = asyncio.Semaphore(2)
+_llm_concurrency = max(1, int(os.getenv("LLM_MAX_CONCURRENT", "2")))
+llm_semaphore = asyncio.Semaphore(_llm_concurrency)
 
 
 def truncate_context(context: str, max_chars: int | None = None) -> str:

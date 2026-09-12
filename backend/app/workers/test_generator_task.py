@@ -164,11 +164,11 @@ async def generate_test_async(request_data: dict, task_id: str):
                     "PDF not ingested for this subject. Run: python seed_pdfs.py --force"
                 )
 
-            context = "\n\n".join([c.content for c in chunks])
+            total_chars = sum(len(c.content or "") for c in chunks)
 
-            if len(context) < settings.MIN_CONTEXT_CHARS:
+            if total_chars < settings.MIN_CONTEXT_CHARS:
                 raise Exception(
-                    f"Insufficient textbook content ({len(context)} chars). "
+                    f"Insufficient textbook content ({total_chars} chars). "
                     "PDF may not have been OCR'd correctly. Run: python seed_pdfs.py --force"
                 )
 
