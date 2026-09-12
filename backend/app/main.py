@@ -51,7 +51,7 @@ def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "build": "orm-fix-3",
+        "build": "orm-fix-4",
     }
 
 
