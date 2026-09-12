@@ -22,3 +22,28 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cursor / Caveman agent tooling (optional — omit from product repo)
+.agents/
+skills-lock.json
+
+# Local / experiment folders (not part of the app)
+_extract_test/
+_images2_*/
+_*.txt
+_*.py
+
+# Secrets
+.env
+backend/.env
+
+# Test generator (Next) + backend
+frontend/node_modules/
+frontend/.next/
+backend/.venv/
+**/__pycache__/
+
+# Local DB (use test_generator.db.deploy for deploy)
+backend/*.db
+backend/*.db-journal
+!backend/test_generator.db.deploy

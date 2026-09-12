@@ -1,0 +1,339 @@
+import json
+import os
+from io import BytesIO
+from typing import Any
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+from app.services.grading_service import (
+    build_attempt_payload,
+    flatten_questions,
+    parse_question_data,
+    parse_test_data,
+)
+from app.models.generated_test import GeneratedTest
+
+
+def _p(text: str) -> str:
+    return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _question_header(num: int, mks: int, txt: str) -> Table:
+    styles = getSampleStyleSheet()
+    q_style = ParagraphStyle(
+        "QuestionHeader",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=13,
+        spaceAfter=4,
+    )
+    right_style = ParagraphStyle(
+        "QuestionMarks",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=14,
+        alignment=2,
+    )
+    q_para = Paragraph(f"<b>{num}.</b> {txt}", q_style)
+    m_para = Paragraph(f"[{mks} mark{'s' if mks != 1 else ''}]", right_style)
+    t = Table([[q_para, m_para]], colWidths=[14.4 * cm, 3.0 * cm])
+    t.setStyle(
+        TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ])
+    )
+    return t
+
+
+def _question_text(q_type: str, data: dict) -> str:
+    if q_type == "mcq":
+        return data.get("question_text", "")
+    if q_type == "assertion_reason":
+        return (
+            f"Assertion (A): {data.get('assertion', '')}<br/>"
+            f"Reason (R): {data.get('reason', '')}"
+        )
+    if q_type == "true_false":
+        return data.get("statement", "")
+    if q_type == "fill_blank":
+        return data.get("sentence_with_blank", "")
+    if q_type == "word_match":
+        col_a = data.get("column_a", [])
+        col_b = data.get("column_b", [])
+        left = "<br/>".join(f"({i+1}) {_p(x)}" for i, x in enumerate(col_a))
+        right = "<br/>".join(f"({chr(97+i)}) {_p(x)}" for i, x in enumerate(col_b))
+        return f"<b>Column A</b><br/>{left}<br/><br/><b>Column B</b><br/>{right}"
+    if q_type == "picture_match":
+        labels = data.get("labels", [])
+        label_lines = "<br/>".join(f"({chr(97+i)}) {_p(x)}" for i, x in enumerate(labels))
+        return f"Match each picture with the correct label.<br/><br/><b>Labels</b><br/>{label_lines}"
+    if q_type == "short_answer":
+        return data.get("question", "")
+    return ""
+
+
+def _picture_cell(pic: dict, image_paths: dict[int, str] | None, body: ParagraphStyle) -> Any:
+    """One numbered picture slot for match-the-following PDF layout."""
+    key = pic.get("key", "")
+    img_id = pic.get("image_id")
+    img_path = image_paths.get(int(img_id)) if image_paths and img_id else None
+    if img_path and os.path.isfile(img_path):
+        try:
+            img = Image(img_path, width=3.5 * cm, height=2.5 * cm, kind="proportional")
+            inner = Table(
+                [[Paragraph(f"<b>({key})</b>", body)], [img]],
+                colWidths=[8.0 * cm],
+            )
+            inner.setStyle(
+                TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ])
+            )
+            return inner
+        except Exception:
+            pass
+    return Paragraph(f"<b>({key})</b> {_p(pic.get('caption', 'Figure'))}", body)
+
+
+def _picture_match_pdf_block(
+    q_num: int,
+    marks: int,
+    display: dict,
+    image_paths: dict[int, str] | None,
+    body: ParagraphStyle,
+) -> list[Any]:
+    """Standard match layout: Column A = pictures 1-5, Column B = shuffled labels a-e."""
+    pictures = display.get("pictures", [])[:5]
+    labels = display.get("labels", [])[:5]
+    while len(pictures) < 5:
+        pictures.append({"key": str(len(pictures) + 1), "caption": "—", "image_id": None})
+    while len(labels) < 5:
+        labels.append({"key": chr(ord("a") + len(labels)), "text": "—"})
+
+    block: list[Any] = []
+    block.append(
+        _question_header(
+            q_num,
+            marks,
+            "Match each picture (Column A) with the correct label (Column B). "
+            f"Each pair carries {max(1, marks // max(len(pictures), 1))} mark(s)."
+        )
+    )
+
+    n = len(pictures)
+    left_rows = [[_picture_cell(pictures[i], image_paths, body)] for i in range(n)]
+    right_rows = [
+        [Paragraph(f"<b>({labels[i]['key']})</b> {_p(labels[i]['text'])}", body)]
+        for i in range(n)
+    ]
+    left_tbl = Table(left_rows, colWidths=[8.4 * cm])
+    right_tbl = Table(right_rows, colWidths=[8.4 * cm])
+    for tbl in (left_tbl, right_tbl):
+        tbl.setStyle(
+            TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ])
+        )
+
+    t = Table(
+        [
+            [
+                Paragraph("<b>Column A — Pictures</b>", body),
+                Paragraph("<b>Column B — Labels</b> (shuffled)", body),
+            ],
+            [left_tbl, right_tbl],
+        ],
+        colWidths=[8.7 * cm, 8.7 * cm],
+    )
+    t.setStyle(
+        TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ])
+    )
+    block.append(t)
+    block.append(Spacer(1, 0.35 * cm))
+    return block
+
+
+def _section_title(section_key: str) -> str:
+    titles = {
+        "section_A_MCQs": "SECTION A: Multiple Choice Questions",
+        "section_B_AssertionReason": "SECTION B: Assertion and Reason",
+        "section_C_Objective": "SECTION C: Objective Questions",
+        "section_D_MatchFollowing": "SECTION D: Match the Following",
+        "section_D_Subjective": "SECTION E: Subjective Questions",
+    }
+    return titles.get(section_key, section_key)
+
+
+def build_test_pdf(
+    test: GeneratedTest,
+    subject_name: str,
+    image_paths: dict[int, str] | None = None,
+) -> bytes:
+    """Render a printable student test paper PDF."""
+    payload = build_attempt_payload(test, subject_name)
+    test_data = payload["test_data"]
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=1.8 * cm,
+        rightMargin=1.8 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "Title",
+        parent=styles["Heading1"],
+        fontSize=16,
+        alignment=1,
+        spaceAfter=8,
+    )
+    section_style = ParagraphStyle(
+        "Section",
+        parent=styles["Heading2"],
+        fontSize=12,
+        spaceBefore=12,
+        spaceAfter=6,
+        textColor=colors.HexColor("#1e3a5f"),
+    )
+    body = ParagraphStyle("Body", parent=styles["Normal"], fontSize=10, leading=14)
+
+    story: list[Any] = []
+    story.append(Paragraph(_p(payload["title"]), title_style))
+    story.append(Paragraph("FINAL EXAMINATION", ParagraphStyle("Sub", parent=body, alignment=1)))
+    story.append(Spacer(1, 0.3 * cm))
+    meta = Table(
+        [
+            ["Subject:", _p(subject_name), "Max Marks:", str(payload["total_marks"])],
+            ["Time:", "2 Hours", "Questions:", str(payload["total_questions"])],
+        ],
+        colWidths=[2.2 * cm, 6.5 * cm, 2.5 * cm, 3 * cm],
+    )
+    meta.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.grey),
+        ("TEXTCOLOR", (2, 0), (2, -1), colors.grey),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(meta)
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph(
+        "<b>Instructions:</b> Answer all questions. Write your answers clearly.",
+        body,
+    ))
+    story.append(Spacer(1, 0.4 * cm))
+
+    section_keys = [
+        "section_A_MCQs",
+        "section_B_AssertionReason",
+        "section_C_Objective",
+        "section_D_MatchFollowing",
+        "section_D_Subjective",
+    ]
+
+    q_num = 0
+    for section_key in section_keys:
+        questions = test_data.get(section_key, [])
+        if section_key == "section_D_MatchFollowing":
+            word_qs = [q for q in questions if q.get("type") == "word_match"][:1]
+            pic_qs = [q for q in questions if q.get("type") == "picture_match"][:1]
+            questions = word_qs + pic_qs
+        if not questions:
+            continue
+
+        sec_marks = sum(int(q.get("marks") or 0) for q in questions)
+        story.append(
+            Paragraph(f"{_section_title(section_key)} ({sec_marks} marks)", section_style)
+        )
+
+        for q in questions:
+            q_num += 1
+            marks = q.get("marks", 1)
+            display = q.get("display", {})
+            q_type = q.get("type", "")
+
+            if q_type == "mcq":
+                text = _p(display.get("question_text", ""))
+                opts = display.get("options", [])
+                opt_lines = "<br/>".join(
+                    f"{chr(65+i)}. {_p(o)}" for i, o in enumerate(opts)
+                )
+                story.append(_question_header(q_num, marks, text))
+                story.append(Paragraph(opt_lines, body))
+            elif q_type == "assertion_reason":
+                text = (
+                    f"<b>Assertion (A):</b> {_p(display.get('assertion', ''))}<br/>"
+                    f"<b>Reason (R):</b> {_p(display.get('reason', ''))}"
+                )
+                story.append(_question_header(q_num, marks, text))
+                for opt in display.get("options", []):
+                    story.append(Paragraph(
+                        f"{opt.get('code', '')}. {_p(opt.get('label', ''))}",
+                        body,
+                    ))
+            elif q_type == "true_false":
+                story.append(_question_header(q_num, marks, _p(display.get('statement', ''))))
+                story.append(Paragraph("True / False: ____________", body))
+            elif q_type == "fill_blank":
+                story.append(_question_header(q_num, marks, _p(display.get('sentence_with_blank', ''))))
+                story.append(Paragraph("Answer: ________________________________", body))
+            elif q_type == "word_match":
+                story.append(_question_header(q_num, marks, "Match the following:"))
+                col_a = display.get("column_a", [])
+                col_b = display.get("column_b", [])
+                table_data = [[Paragraph("<b>Column A</b>", body), Paragraph("<b>Column B</b>", body)]]
+                for i in range(max(len(col_a), len(col_b))):
+                    a_cell = Paragraph(f"({col_a[i]['key']}) {_p(col_a[i]['text'])}", body) if i < len(col_a) else ""
+                    b_cell = Paragraph(f"({col_b[i]['key']}) {_p(col_b[i]['text'])}", body) if i < len(col_b) else ""
+                    table_data.append([a_cell, b_cell])
+                t = Table(table_data, colWidths=[8.7 * cm, 8.7 * cm])
+                t.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ]))
+                story.append(t)
+            elif q_type == "picture_match":
+                pm_block = _picture_match_pdf_block(q_num, marks, display, image_paths, body)
+                story.extend(pm_block)
+                continue
+            elif q_type == "short_answer":
+                story.append(_question_header(q_num, marks, _p(display.get('question', ''))))
+                story.append(Spacer(1, 2.0 * cm))
+            else:
+                story.append(_question_header(q_num, marks, _question_text(q_type, display)))
+
+            story.append(Spacer(1, 0.25 * cm))
+
+    doc.build(story)
+    return buffer.getvalue()

@@ -1,0 +1,257 @@
+.portal-landing {
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-light: #eef2ff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --white: #ffffff;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-hover: 0 20px 30px -10px rgba(79, 70, 229, 0.15);
+
+  box-sizing: border-box;
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
+  font-family: var(--font-portal), "Plus Jakarta Sans", system-ui, sans-serif;
+}
+
+.portal-landing *,
+.portal-landing *::before,
+.portal-landing *::after {
+  box-sizing: border-box;
+}
+
+.portal-landing header {
+  background: var(--white);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.portal-landing .nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.portal-landing .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--text-main);
+}
+
+.portal-landing .brand-icon {
+  background: var(--primary);
+  color: var(--white);
+  padding: 0.5rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.portal-landing .brand-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #1e293b 0%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.portal-landing .hero {
+  text-align: center;
+  padding: 4rem 1.5rem 3rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.portal-landing .hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 0.35rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+}
+
+.portal-landing .hero h1 {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-main);
+  margin: 0 0 1rem;
+  letter-spacing: -0.03em;
+}
+
+.portal-landing .hero p {
+  font-size: 1.125rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.portal-landing main {
+  flex: 1;
+  max-width: 1100px;
+  margin: 0 auto 5rem;
+  padding: 0 1.5rem;
+  width: 100%;
+}
+
+.portal-landing .grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.75rem;
+}
+
+.portal-landing .action-card {
+  background: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 2rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-decoration: none;
+  color: var(--text-main);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.portal-landing .action-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: var(--primary);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.portal-landing .action-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-hover);
+  border-color: rgba(79, 70, 229, 0.2);
+}
+
+.portal-landing .action-card:hover::before {
+  opacity: 1;
+}
+
+.portal-landing .action-card--static {
+  cursor: default;
+  opacity: 0.92;
+}
+
+.portal-landing .action-card--static:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-color);
+}
+
+.portal-landing .action-card--static:hover::before {
+  opacity: 0;
+}
+
+.portal-landing .card-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  transition: transform 0.3s ease;
+}
+
+.portal-landing .action-card:hover .card-icon-wrapper {
+  transform: scale(1.08);
+}
+
+.portal-landing .action-card--static:hover .card-icon-wrapper {
+  transform: none;
+}
+
+.portal-landing .ebook-color {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.portal-landing .lesson-color {
+  background: #ecfdf5;
+  color: #059669;
+}
+.portal-landing .worksheet-color {
+  background: #fff7ed;
+  color: #ea580c;
+}
+.portal-landing .test-color {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.portal-landing .card-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.portal-landing .card-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 1.5rem;
+  flex-grow: 1;
+}
+
+.portal-landing .card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--primary);
+  transition: gap 0.2s ease;
+}
+
+.portal-landing .action-card:hover .card-btn {
+  gap: 0.75rem;
+}
+
+.portal-landing footer {
+  background: var(--white);
+  border-top: 1px solid var(--border-color);
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .portal-landing .hero h1 {
+    font-size: 2rem;
+  }
+  .portal-landing .grid-container {
+    grid-template-columns: 1fr;
+  }
+}

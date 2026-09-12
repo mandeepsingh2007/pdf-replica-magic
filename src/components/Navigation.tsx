@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import logo from "@/assets/image.png"; // Import the logo
+import { TEST_GENERATOR_LOGIN_URL } from "@/lib/test-generator-url";
 
 const navItems = [
+  { id: "semester-book-portal", label: "Semester Book Portal" },
   { id: "meet-us", label: "Meet Us" },
   { id: "cover-design", label: "Cover Design" },
   { id: "layout-design", label: "Layout Design" },
@@ -12,7 +14,7 @@ const navItems = [
 ];
 
 export const Navigation = () => {
-  const [activeSection, setActiveSection] = useState("meet-us");
+  const [activeSection, setActiveSection] = useState("semester-book-portal");
 
   useEffect(() => {
     const handleScroll = () => {
@@ -33,6 +35,10 @@ export const Navigation = () => {
   }, []);
 
   const scrollToSection = (id: string) => {
+    if (id === "semester-book-portal") {
+      window.location.href = TEST_GENERATOR_LOGIN_URL;
+      return;
+    }
     const element = document.getElementById(id);
     if (element) {
       const offset = 80;

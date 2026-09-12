@@ -26,6 +26,7 @@ import neg_cover_30 from "@/assets/neg_cover_30.jpg";
 import corporateDesignImage from "@/assets/Screenshot 2025-10-31 203723.png";
 
 import { useState, useEffect } from "react";
+import { TEST_GENERATOR_LOGIN_URL } from "@/lib/test-generator-url";
 
 const slideshowImages = [
   neg_cover_11,
@@ -80,6 +81,44 @@ const Index = () => {
       {/* <img src={logo} alt="Company Logo" className="absolute top-0 left-0 h-24 w-auto p-4" /> Removed logo img tag */}
 
       <main className="pt-20 lg:pt-32">
+        {/* Semester Book Portal */}
+        <section
+          id="semester-book-portal"
+          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 lg:mb-16"
+        >
+          <div className="border-2 lg:border-4 border-primary">
+            <div className="bg-primary text-primary-foreground py-6 lg:py-8 px-4 lg:px-8 flex flex-col lg:flex-row items-center justify-between">
+              <div className="flex-1 order-2 lg:order-1">
+                <h2 className="text-2xl lg:text-4xl font-bold mb-2 lg:mb-4">SEMESTER BOOK</h2>
+                <h2 className="text-2xl lg:text-4xl font-bold mb-4 lg:mb-6">DIGITAL PORTAL</h2>
+                <p className="mb-3 lg:mb-4 max-w-2xl text-sm lg:text-base">
+                  Curriculum-aligned e-books, lesson plans, worksheets, and an AI-powered test
+                  generator for smart classrooms — built for NEP and NCF aligned teaching.
+                </p>
+                <p className="mb-6 lg:mb-8 max-w-2xl text-sm lg:text-base">
+                  Teachers can sign in to create custom question papers, unit tests, and answer keys
+                  from your semester book content in seconds.
+                </p>
+                <CTAButton onClick={() => (window.location.href = TEST_GENERATOR_LOGIN_URL)}>
+                  OPEN TEST GENERATOR
+                </CTAButton>
+              </div>
+              <div className="flex-shrink-0 lg:ml-8 mb-6 lg:mb-0 order-1 lg:order-2">
+                <img
+                  src={layoutBooks}
+                  alt="Semester book digital portal"
+                  className="w-64 lg:w-96 h-auto"
+                  style={{
+                    transform: "scale(1.6) translateX(-60px)",
+                    ...(typeof window !== "undefined" &&
+                      window.innerWidth >= 1024 && { transform: "scale(2.5) translateX(-110px)" }),
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Meet Us Section */}
         <section id="meet-us" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 lg:mb-16">
           <div className="border-2 lg:border-4 border-primary">
