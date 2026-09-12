@@ -1,0 +1,34 @@
+/* NE Graphics marketing site — scoped so test-generator pages keep dark theme */
+.negraphics-site {
+  --ng-primary: hsl(195, 100%, 45%);
+  --ng-primary-fg: hsl(0, 0%, 100%);
+  --ng-fg: hsl(0, 0%, 20%);
+  --ng-muted: hsl(0, 0%, 50%);
+  --ng-bg: hsl(0, 0%, 100%);
+  background: var(--ng-bg);
+  color: var(--ng-fg);
+  min-height: 100vh;
+}
+
+.negraphics-site .ng-bg-primary {
+  background-color: var(--ng-primary);
+}
+.negraphics-site .ng-text-primary-fg {
+  color: var(--ng-primary-fg);
+}
+.negraphics-site .ng-text-fg {
+  color: var(--ng-fg);
+}
+.negraphics-site .ng-text-muted {
+  color: var(--ng-muted);
+}
+.negraphics-site .ng-border-primary {
+  border-color: var(--ng-primary);
+}
+.negraphics-site .ng-text-primary {
+  color: var(--ng-primary);
+}
+.negraphics-site .ng-header {
+  background-color: var(--ng-primary);
+  color: var(--ng-primary-fg);
+}
