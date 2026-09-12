@@ -1,3 +1,7 @@
+from app.db.orm_setup import ensure_orm_loaded
+
+ensure_orm_loaded()
+
 from fastapi import APIRouter
 from app.api.endpoints import subjects, documents, tests, tasks, websocket
 

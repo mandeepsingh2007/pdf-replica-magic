@@ -32,8 +32,12 @@ if settings.CORS_ORIGINS:
 
 @app.on_event("startup")
 async def startup_event():
+    from app.db.orm_setup import ensure_orm_loaded
+
+    ensure_orm_loaded()
     if ensure_sqlite_seed(settings.DATABASE_URL):
         await reset_engine()
+        ensure_orm_loaded()
     await init_db()
 
 @app.get("/")
@@ -47,7 +51,8 @@ def read_root():
 def health_check():
     return {
         "status": "healthy",
-        "version": settings.APP_VERSION
+        "version": settings.APP_VERSION,
+        "build": "orm-fix-2",
     }
 
 
@@ -56,8 +61,10 @@ async def health_db():
     from sqlalchemy.future import select
 
     from app.db.database import async_session
-    from app.models.subject import Subject
+    from app.db.orm_setup import ensure_orm_loaded
+    from app.models import Subject
 
+    ensure_orm_loaded()
     try:
         async with async_session() as db:
             n = len((await db.execute(select(Subject))).scalars().all())

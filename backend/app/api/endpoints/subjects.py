@@ -4,9 +4,8 @@ from sqlalchemy.future import select
 from typing import List
 
 from app.db.database import get_db
-from app.models.subject import Subject
-from app.models.document import Document
-from app.models.chunk import Chunk
+from app.db.orm_setup import ensure_orm_loaded
+from app.models import Chunk, Document, Subject
 from app.schemas.responses import SubjectResponse, ChapterResponse
 from app.services.chapter_service import extract_chapters
 
@@ -15,6 +14,7 @@ router = APIRouter()
 @router.get("", response_model=List[SubjectResponse])
 async def list_subjects(db: AsyncSession = Depends(get_db)):
     """List all active subjects."""
+    ensure_orm_loaded()
     result = await db.execute(select(Subject).where(Subject.is_active == True))
     subjects = result.scalars().all()
     return subjects
