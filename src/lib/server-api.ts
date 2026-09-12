@@ -20,7 +20,7 @@ export async function fetchSubjectsOnServer(): Promise<{
     if (!res.ok) {
       return {
         subjects: [],
-        error: `Backend returned ${res.status}. Is the API running on port 8000?`,
+        error: `Backend returned ${res.status} (${BACKEND_ORIGIN}). Redeploy Render after DB seed fix, or wake the API if it was sleeping.`,
       };
     }
     const subjects = (await res.json()) as ServerSubject[];
@@ -28,7 +28,7 @@ export async function fetchSubjectsOnServer(): Promise<{
   } catch {
     return {
       subjects: [],
-      error: "Cannot reach backend on port 8000. Start uvicorn and refresh.",
+      error: `Cannot reach backend at ${BACKEND_ORIGIN}. Check BACKEND_URL on Vercel and Render service status.`,
     };
   }
 }
