@@ -5,7 +5,9 @@ from typing import List
 
 from app.db.database import get_db
 from app.db.orm_setup import ensure_orm_loaded
-from app.models import Chunk, Document, Subject
+from app.models.chunk import Chunk
+from app.models.document import Document
+from app.models.subject import Subject
 from app.schemas.responses import SubjectResponse, ChapterResponse
 from app.services.chapter_service import extract_chapters
 

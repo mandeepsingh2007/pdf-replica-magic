@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import app.models  # noqa: F401 — register all ORM models before Subject relationships resolve
-
 from app.core.config import settings
+from app.db.orm_setup import ensure_orm_loaded
+
+ensure_orm_loaded()
+
 from app.api.router import api_router
 from app.db.bootstrap import ensure_sqlite_seed
 from app.db.database import init_db, reset_engine
@@ -32,9 +34,6 @@ if settings.CORS_ORIGINS:
 
 @app.on_event("startup")
 async def startup_event():
-    from app.db.orm_setup import ensure_orm_loaded
-
-    ensure_orm_loaded()
     if ensure_sqlite_seed(settings.DATABASE_URL):
         await reset_engine()
         ensure_orm_loaded()
@@ -52,7 +51,7 @@ def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "build": "orm-fix-2",
+        "build": "orm-fix-3",
     }
 
 
@@ -62,7 +61,7 @@ async def health_db():
 
     from app.db.database import async_session
     from app.db.orm_setup import ensure_orm_loaded
-    from app.models import Subject
+    from app.models.subject import Subject
 
     ensure_orm_loaded()
     try:
