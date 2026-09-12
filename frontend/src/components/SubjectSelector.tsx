@@ -197,9 +197,33 @@ export default function SubjectSelector({
   };
 
   const pollStatus = (taskId: string) => {
+    let badPolls = 0;
     const interval = setInterval(async () => {
       try {
         const res = await apiFetch(`${API_BASE}/status/${taskId}`);
+
+        if (res.status === 404) {
+          clearInterval(interval);
+          setStep("failed");
+          setErrorMsg(
+            "Generation was interrupted (server restarted). Please try again. If it keeps happening, pick fewer chapters or enable a persistent disk on Render."
+          );
+          return;
+        }
+
+        if (!res.ok) {
+          badPolls += 1;
+          if (badPolls >= 45) {
+            clearInterval(interval);
+            setStep("failed");
+            setErrorMsg(
+              `Could not reach the server (${res.status}). Wait a minute and try generating again.`
+            );
+          }
+          return;
+        }
+
+        badPolls = 0;
         const data = await res.json();
         setProgress(data.progress);
         if (data.current_step) setCurrentStep(data.current_step);
@@ -214,10 +238,15 @@ export default function SubjectSelector({
         } else if (data.status === "failed") {
           clearInterval(interval);
           setStep("failed");
-          setErrorMsg(data.current_step || "Generation failed");
+          setErrorMsg(data.error_message || data.current_step || "Generation failed");
         }
       } catch {
-        /* keep polling */
+        badPolls += 1;
+        if (badPolls >= 45) {
+          clearInterval(interval);
+          setStep("failed");
+          setErrorMsg("Lost connection while generating. Please try again.");
+        }
       }
     }, 1000);
   };

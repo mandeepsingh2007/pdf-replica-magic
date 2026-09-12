@@ -51,7 +51,7 @@ def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "build": "orm-fix-4",
+        "build": "gen-job-persist-1",
     }
 
 

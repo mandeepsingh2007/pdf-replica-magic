@@ -1,5 +1,4 @@
 import uuid
-import asyncio
 import json
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
@@ -97,7 +96,7 @@ async def generate_test(
     if request.include_types is not None:
         payload["include_types"] = [t for t in request.include_types if t in VALID_QUESTION_TYPES]
 
-    asyncio.create_task(generate_test_async(payload, task_id))
+    background_tasks.add_task(generate_test_async, payload, task_id)
 
     return {"task_id": task_id, "message": "Test generation started in background"}
 

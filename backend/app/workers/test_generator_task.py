@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import json
 import logging
 import os
@@ -53,6 +54,7 @@ async def expand_stacked_images(
 
         logger.info("Split stacked illustration %s into %d panels", path, len(panels))
         for panel_path in panels:
+            gc.collect()
             result = await db.execute(
                 select(ExtractedImage).where(ExtractedImage.image_path == panel_path)
             )
@@ -199,7 +201,7 @@ async def generate_test_async(request_data: dict, task_id: str):
                         ):
                             filtered_images.append(img)
                     image_metadata = filtered_images
-            if document_id:
+            if document_id and os.getenv("SKIP_IMAGE_EXPAND") != "1":
                 image_metadata = await expand_stacked_images(db, document_id, image_metadata)
             logger.info(
                 "Chapter scope: %s | %d images for picture-match",
