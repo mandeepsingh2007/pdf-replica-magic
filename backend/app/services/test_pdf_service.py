@@ -19,6 +19,7 @@ from reportlab.platypus import (
 from app.services.grading_service import (
     build_attempt_payload,
     flatten_questions,
+    format_paper_answer,
     parse_question_data,
     parse_test_data,
 )
@@ -232,6 +233,101 @@ def _pdf_section_blocks(test_data: dict) -> list[tuple[str, list[dict], str | No
     if test_data.get("section_D_Subjective"):
         raw.append(("Subjective Questions", test_data["section_D_Subjective"], None))
     return _with_serial_section_letters(raw)
+
+
+def _answer_key_stem(q_type: str, q_data: dict) -> str:
+    if q_type == "mcq":
+        return q_data.get("question_text") or ""
+    if q_type == "assertion_reason":
+        return f"A: {q_data.get('assertion', '')}"
+    if q_type == "true_false":
+        return q_data.get("statement") or ""
+    if q_type == "fill_blank":
+        return q_data.get("sentence_with_blank") or ""
+    if q_type == "word_match":
+        return "Match the following (words)"
+    if q_type == "picture_match":
+        return "Match the picture with text"
+    if q_type in ("short_answer", "long_answer"):
+        return q_data.get("question") or ""
+    return ""
+
+
+def build_answer_key_pdf(test: GeneratedTest, subject_name: str) -> bytes:
+    """Answer key for only the questions printed on this test paper."""
+    test_data = parse_test_data(test)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=1.8 * cm,
+        rightMargin=1.8 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "KeyTitle",
+        parent=styles["Heading1"],
+        fontSize=16,
+        alignment=1,
+        spaceAfter=6,
+    )
+    section_style = ParagraphStyle(
+        "KeySection",
+        parent=styles["Heading2"],
+        fontSize=12,
+        spaceBefore=12,
+        spaceAfter=6,
+        textColor=colors.HexColor("#1e3a5f"),
+    )
+    body = ParagraphStyle("KeyBody", parent=styles["Normal"], fontSize=10, leading=14)
+    answer_style = ParagraphStyle(
+        "KeyAnswer",
+        parent=body,
+        textColor=colors.HexColor("#14532d"),
+        leftIndent=12,
+        spaceAfter=8,
+    )
+
+    story: list[Any] = []
+    story.append(Paragraph(f"{_p(test.title or 'Generated Test')} — ANSWER KEY", title_style))
+    story.append(
+        Paragraph(
+            f"Subject: {_p(subject_name)} &nbsp;&nbsp;|&nbsp;&nbsp; "
+            f"Max Marks: {test.total_marks}",
+            ParagraphStyle("KeyMeta", parent=body, alignment=1),
+        )
+    )
+    story.append(Spacer(1, 0.35 * cm))
+    story.append(
+        Paragraph(
+            "Answers match the printed test paper (including shuffled option letters).",
+            body,
+        )
+    )
+
+    q_num = 0
+    for section_title, questions, _subtitle in _pdf_section_blocks(test_data):
+        if not questions:
+            continue
+        story.append(Paragraph(section_title, section_style))
+        for q in questions:
+            q_num += 1
+            q_type = q.get("type") or ""
+            q_data = parse_question_data(q.get("data"))
+            stem = _answer_key_stem(q_type, q_data)
+            if len(stem) > 160:
+                stem = stem[:157] + "..."
+            answer = format_paper_answer(q) or "—"
+            answer_html = "<br/>".join(_p(line) for line in str(answer).split("\n"))
+            story.append(
+                Paragraph(f"<b>{q_num}.</b> {_p(stem)}" if stem else f"<b>{q_num}.</b>", body)
+            )
+            story.append(Paragraph(f"<b>Answer:</b> {answer_html}", answer_style))
+
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def build_test_pdf(

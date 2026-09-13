@@ -335,6 +335,53 @@ def find_textbook_reference(
     return TextbookReference(excerpt=excerpt, page_number=best_chunk.page_number)
 
 
+def format_paper_answer(question: dict) -> str:
+    """Answer as printed on this test paper (same shuffle / letters as the student PDF)."""
+    q_type = question.get("type") or ""
+    q_data = parse_question_data(question.get("data"))
+    q_id = question.get("id")
+
+    if q_type == "mcq":
+        correct = q_data.get("correct_answer") or ""
+        options = [
+            o
+            for o in stable_shuffle(
+                [correct] + list(q_data.get("distractors") or []),
+                seed=q_id or 0,
+            )
+            if o
+        ]
+        if correct in options:
+            return f"{chr(65 + options.index(correct))}. {correct}"
+        return correct
+
+    if q_type == "assertion_reason":
+        code = (q_data.get("correct_option_code") or "").upper().strip()
+        return f"{code}. {AR_OPTION_LABELS.get(code, code)}"
+
+    if q_type == "true_false":
+        return "True" if q_data.get("is_true") else "False"
+
+    if q_type == "fill_blank":
+        return q_data.get("correct_word") or ""
+
+    if q_type in ("word_match", "picture_match"):
+        expected = compute_expected_match_keys(q_type, q_data, q_id)
+        display = _build_match_display(q_data, q_type, q_id or 0)
+        right_items = (
+            display.get("column_b") if q_type == "word_match" else display.get("labels")
+        ) or []
+        right = {row["key"]: row["text"] for row in right_items}
+        lines = []
+        for left_key, right_key in sorted(expected.items(), key=lambda x: int(x[0])):
+            lines.append(f"({left_key}) → ({right_key}) {right.get(right_key, '')}")
+        return "\n".join(lines)
+
+    if q_type in ("short_answer", "long_answer"):
+        return q_data.get("ideal_answer") or ""
+    return ""
+
+
 def format_correct_answer(
     q_type: str, q_data: dict, question_id: int | None = None
 ) -> str:

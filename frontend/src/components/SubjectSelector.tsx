@@ -255,11 +255,11 @@ export default function SubjectSelector({
     }, 1000);
   };
 
-  const downloadPdf = async (id: string) => {
+  const downloadPdf = async (id: string, kind: "pdf" | "answer-key" = "pdf") => {
     try {
-      const res = await apiFetch(`${API_BASE}/test/${id}/pdf`);
+      const res = await apiFetch(`${API_BASE}/test/${id}/${kind === "pdf" ? "pdf" : "answer-key"}`);
       if (!res.ok) {
-        let msg = "PDF download failed";
+        let msg = kind === "pdf" ? "PDF download failed" : "Answer key download failed";
         try {
           const err = await res.json();
           if (typeof err.detail === "string" && err.detail) msg = err.detail;
@@ -273,11 +273,12 @@ export default function SubjectSelector({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${selectedSubject?.name ?? "test"}_${id}.pdf`;
+      const stem = `${selectedSubject?.name ?? "test"}_${id}`;
+      a.download = kind === "pdf" ? `${stem}.pdf` : `${stem}_answer_key.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "PDF download failed");
+      setErrorMsg(e instanceof Error ? e.message : "Download failed");
     }
   };
 
@@ -330,6 +331,13 @@ export default function SubjectSelector({
               >
                 <Download className="w-5 h-5" />
                 Download PDF
+              </button>
+              <button
+                onClick={() => testId && downloadPdf(testId, "answer-key")}
+                className="inline-flex items-center justify-center gap-2 px-8 py-4 font-semibold text-white transition-colors bg-emerald-600 rounded-xl hover:bg-emerald-700"
+              >
+                <Download className="w-5 h-5" />
+                Answer Key
               </button>
             </div>
             {errorMsg && (

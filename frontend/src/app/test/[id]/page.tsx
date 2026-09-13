@@ -228,35 +228,49 @@ export default function TestPaperPage() {
   const [grading, setGrading] = useState(false);
   const [error, setError] = useState("");
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingKey, setDownloadingKey] = useState(false);
 
-  const downloadTestPdf = useCallback(async () => {
-    if (!id || downloadingPdf) return;
-    setDownloadingPdf(true);
-    try {
-      const res = await apiFetch(`${API_BASE}/test/${id}/pdf`);
-      if (!res.ok) {
-        let msg = "PDF download failed";
-        try {
-          const err = await res.json();
-          if (typeof err.detail === "string" && err.detail) msg = err.detail;
-        } catch {
-          /* ignore */
+  const downloadFile = useCallback(
+    async (path: string, filename: string, setBusy: (v: boolean) => void) => {
+      if (!id) return;
+      setBusy(true);
+      try {
+        const res = await apiFetch(`${API_BASE}/test/${id}/${path}`);
+        if (!res.ok) {
+          let msg = "Download failed";
+          try {
+            const err = await res.json();
+            if (typeof err.detail === "string" && err.detail) msg = err.detail;
+          } catch {
+            /* ignore */
+          }
+          throw new Error(msg);
         }
-        throw new Error(msg);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Download failed");
+      } finally {
+        setBusy(false);
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `test_${id}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "PDF download failed");
-    } finally {
-      setDownloadingPdf(false);
-    }
-  }, [id, downloadingPdf]);
+    },
+    [id]
+  );
+
+  const downloadTestPdf = useCallback(() => {
+    if (downloadingPdf) return;
+    return downloadFile("pdf", `test_${id}.pdf`, setDownloadingPdf);
+  }, [downloadFile, downloadingPdf, id]);
+
+  const downloadAnswerKey = useCallback(() => {
+    if (downloadingKey) return;
+    return downloadFile("answer-key", `test_${id}_answer_key.pdf`, setDownloadingKey);
+  }, [downloadFile, downloadingKey, id]);
 
   const allQuestions = useMemo(
     () => (testMeta ? collectQuestions(testMeta.test_data) : []),
@@ -370,6 +384,18 @@ export default function TestPaperPage() {
                 <Download className="w-4 h-4" />
               )}
               Download PDF
+            </button>
+            <button
+              onClick={downloadAnswerKey}
+              disabled={downloadingKey}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {downloadingKey ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              Answer Key
             </button>
             {!gradeResult && (
               <span className="text-sm font-medium text-gray-500">

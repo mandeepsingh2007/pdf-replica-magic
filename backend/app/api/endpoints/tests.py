@@ -30,7 +30,7 @@ from app.services.grading_service import (
     parse_test_data,
 )
 from app.services.question_generator import VALID_QUESTION_TYPES
-from app.services.test_pdf_service import build_test_pdf
+from app.services.test_pdf_service import build_answer_key_pdf, build_test_pdf
 
 router = APIRouter()
 
@@ -195,6 +195,27 @@ async def download_test_pdf(test_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
     filename = f"test_{test_id}_{subject_name.replace(' ', '_')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/test/{test_id}/answer-key")
+async def download_answer_key_pdf(test_id: int, db: AsyncSession = Depends(get_db)):
+    """Download the answer key PDF for only the questions on this test."""
+    try:
+        test, subject_name = await load_test_with_subject(db, test_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Test not found")
+
+    try:
+        pdf_bytes = build_answer_key_pdf(test, subject_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Answer key PDF failed: {e}")
+
+    filename = f"test_{test_id}_{subject_name.replace(' ', '_')}_answer_key.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
