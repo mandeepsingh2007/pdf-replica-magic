@@ -15,7 +15,7 @@ export default async function UploadPage() {
       
       <div className="flex flex-col items-center justify-center pt-10">
         <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold tracking-tight mb-4">Class 1 Test Generator</h1>
+          <h1 className="text-4xl font-bold tracking-tight mb-4">Class 1 Semester 1 Test Generator</h1>
           <p className="text-gray-400 max-w-xl mx-auto text-lg">
             Pick a subject, select chapters, choose formats — get 5 fresh questions per format every time.
           </p>
