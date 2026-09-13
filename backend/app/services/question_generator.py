@@ -16,7 +16,9 @@ from app.schemas.question_schemas import (
 )
 from app.services.llm_service import generate_structured_output
 from app.services.vlm_service import (
+    enrich_picture_match_labels,
     heuristic_short_label_from_description,
+    is_junk_label,
     is_narrative_vlm_description,
     is_placeholder_description,
     short_label_for_image,
@@ -366,34 +368,30 @@ def _filename_hint(img: dict) -> str:
     return stem.replace("_", " ").strip() or "Figure"
 
 
-def _fallback_label_from_image(img: dict) -> str:
-    desc = (img.get("description") or img.get("caption") or "").strip()
-    if desc and not is_placeholder_description(desc):
-        short = heuristic_short_label_from_description(desc)
-        if short and not is_narrative_vlm_description(short):
-            return short
-    return _filename_hint(img)[:50]
-
-
 async def _labels_for_images(selected: list[dict]) -> list[str]:
-    """One short, unique label per image — vision when allowed, else text-only batch."""
+    """One short, unique label per image — never file names like page4 fig2."""
+    labels: list[str] = []
     if runtime_vision_enabled():
-        labels: list[str] = []
         for img in selected:
             path = img.get("image_path")
+            label = ""
             if path and os.path.isfile(path):
                 label = await short_label_for_image(path)
-                if label and label != "Figure" and not is_narrative_vlm_description(label):
-                    labels.append(label)
-                    continue
-            labels.append(_fallback_label_from_image(img))
-        return _dedupe_labels(labels)
+            if not label or is_junk_label(label):
+                desc = (img.get("description") or img.get("caption") or "").strip()
+                label = heuristic_short_label_from_description(desc)
+            labels.append(label or "")
 
     meta: list[tuple[str, str]] = []
     for img in selected:
         desc = (img.get("description") or img.get("caption") or "").strip()
         meta.append((_filename_hint(img), desc))
-    labels = await short_labels_from_metadata(meta)
+    if not labels:
+        labels = await short_labels_from_metadata(meta)
+    elif len(labels) < len(selected):
+        labels.extend([""] * (len(selected) - len(labels)))
+
+    labels = await enrich_picture_match_labels(labels, selected)
     return _dedupe_labels(labels)
 
 

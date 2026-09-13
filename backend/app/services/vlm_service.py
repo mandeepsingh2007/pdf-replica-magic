@@ -1,10 +1,13 @@
 import asyncio
 import json
 import logging
+import os
 import re
+import tempfile
 from pathlib import Path
 
 import google.generativeai as genai
+from PIL import Image
 
 from app.core.config import settings
 
@@ -72,11 +75,34 @@ async def analyze_image_with_vlm(image_path: str) -> str:
     return result or "Textbook illustration"
 
 
+_JUNK_LABEL_RE = re.compile(
+    r"^(?:page\s*\d+(?:\s*fig\s*\d+)?|fig\s*\d+|figure\s*\d+|pdf\d+|p\d+_img\d+)$",
+    re.I,
+)
+
+
+def is_junk_label(label: str) -> bool:
+    """Student-facing labels must not be file names or page/fig codes."""
+    s = (label or "").strip()
+    if not s or len(s) < 2:
+        return True
+    low = s.lower()
+    if low in ("figure", "textbook illustration", "picture", "item"):
+        return True
+    if _JUNK_LABEL_RE.match(low):
+        return True
+    if re.match(r"^page\d+\s*fig\d+", low):
+        return True
+    return False
+
+
 def normalize_short_label(label: str) -> str:
     label = (label or "").split("\n")[0].strip().strip('"').strip("'").strip(".")
     if len(label) > 60:
         label = label[:57] + "..."
-    return label or "Figure"
+    if is_junk_label(label):
+        return ""
+    return label or ""
 
 
 def is_narrative_vlm_description(desc: str) -> bool:
@@ -122,7 +148,33 @@ def heuristic_short_label_from_description(desc: str) -> str:
 async def short_label_for_image(image_path: str) -> str:
     """Short 2-5 word label for picture-match questions."""
     label = await _vision_call(image_path, LABEL_PROMPT)
-    return normalize_short_label(label) if label else "Figure"
+    return normalize_short_label(label) if label else ""
+
+
+async def short_label_for_image_lowmem(image_path: str, max_px: int = 384) -> str:
+    """Vision labels using a small JPEG — safe on 1GB hosts when run one image at a time."""
+    path = Path(image_path)
+    if not path.is_file():
+        return ""
+    tmp_path: str | None = None
+    try:
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((max_px, max_px))
+            fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
+            os.close(fd)
+            im.save(tmp_path, "JPEG", quality=85, optimize=True)
+        label = await _vision_call(tmp_path, LABEL_PROMPT)
+        return normalize_short_label(label) if label else ""
+    except Exception as e:
+        logger.error("Low-mem vision label failed for %s: %s", image_path, e)
+        return ""
+    finally:
+        if tmp_path and os.path.isfile(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 async def short_labels_from_metadata(
@@ -137,21 +189,19 @@ async def short_labels_from_metadata(
         return []
 
     heuristics = [
-        heuristic_short_label_from_description(desc) or heuristic_short_label_from_description(hint)
-        for hint, desc in items
+        heuristic_short_label_from_description(desc)
+        for _, desc in items
     ]
-    if all(h and not is_narrative_vlm_description(h) for h in heuristics):
-        return heuristics
 
     if not settings.GEMINI_API_KEY:
-        return [
-            h or normalize_short_label(hint.replace("_", " ")[:40]) or "Figure"
-            for (hint, _), h in zip(items, heuristics)
-        ]
+        return [h for h in heuristics if h and not is_junk_label(h)]
 
     lines = []
-    for i, (hint, desc) in enumerate(items, start=1):
-        body = desc.strip() if desc and not is_placeholder_description(desc) else hint
+    for i, (_, desc) in enumerate(items, start=1):
+        if desc and not is_placeholder_description(desc):
+            body = desc.strip()
+        else:
+            body = "(no description stored — infer from typical Class 1 textbook figure)"
         lines.append(f"{i}. {body[:350]}")
 
     prompt = (
@@ -181,14 +231,77 @@ async def short_labels_from_metadata(
             raw = labels[i] if i < len(labels) else ""
             lbl = normalize_short_label(str(raw)) if raw else ""
             if not lbl or is_narrative_vlm_description(lbl):
-                lbl = heuristics[i] or normalize_short_label(items[i][0].replace("_", " "))
-            out.append(lbl or "Figure")
+                lbl = heuristics[i] or ""
+            out.append(lbl)
         return out
     except Exception as e:
         logger.error("Text label batch failed: %s", e)
-        return [
-            heuristics[i]
-            or normalize_short_label(items[i][0].replace("_", " "))
-            or "Figure"
-            for i in range(n)
-        ]
+        return [heuristics[i] or "" for i in range(n)]
+
+
+async def enrich_picture_match_labels(
+    labels: list[str],
+    images: list[dict],
+) -> list[str]:
+    """Replace junk/empty labels using descriptions, then low-res vision."""
+    n = len(images)
+    out = [(normalize_short_label(lbl) if lbl else "") for lbl in labels[:n]]
+    while len(out) < n:
+        out.append("")
+
+    for i in range(n):
+        if out[i] and not is_junk_label(out[i]):
+            continue
+        desc = (images[i].get("description") or images[i].get("caption") or "").strip()
+        h = heuristic_short_label_from_description(desc)
+        if h and not is_junk_label(h):
+            out[i] = h
+            continue
+        path = images[i].get("image_path")
+        if path and os.path.isfile(path) and settings.GEMINI_API_KEY:
+            v = await short_label_for_image_lowmem(path)
+            if v and not is_junk_label(v):
+                out[i] = v
+
+    missing = [i for i in range(n) if not out[i] or is_junk_label(out[i])]
+    if missing and settings.GEMINI_API_KEY:
+        lines = []
+        for idx in missing:
+            desc = (images[idx].get("description") or images[idx].get("caption") or "").strip()
+            body = (
+                desc[:350]
+                if desc and not is_placeholder_description(desc)
+                else "Unknown textbook photo — infer a specific 2-5 word name"
+            )
+            lines.append(f"{len(lines) + 1}. {body}")
+        if lines:
+            prompt = (
+                f"Give a unique 2-5 word label for each numbered figure "
+                f"(person name, place, food, object). JSON: {{\"labels\": [...]}} "
+                f"with exactly {len(lines)} strings.\n\n" + "\n".join(lines)
+            )
+            try:
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                model = genai.GenerativeModel(settings.LLM_MODEL)
+                response = await asyncio.wait_for(
+                    model.generate_content_async(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            response_mime_type="application/json",
+                        ),
+                    ),
+                    timeout=45,
+                )
+                data = json.loads(response.text or "{}")
+                extra = data.get("labels") or []
+                for j, img_idx in enumerate(missing[: len(extra)]):
+                    lbl = normalize_short_label(str(extra[j]))
+                    if lbl and not is_junk_label(lbl):
+                        out[img_idx] = lbl
+            except Exception as e:
+                logger.error("Picture label retry LLM failed: %s", e)
+
+    for i in range(n):
+        if not out[i] or is_junk_label(out[i]):
+            out[i] = f"Picture {i + 1}"
+    return out
