@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import re
 from pathlib import Path
 
 import google.generativeai as genai
@@ -70,12 +72,123 @@ async def analyze_image_with_vlm(image_path: str) -> str:
     return result or "Textbook illustration"
 
 
+def normalize_short_label(label: str) -> str:
+    label = (label or "").split("\n")[0].strip().strip('"').strip("'").strip(".")
+    if len(label) > 60:
+        label = label[:57] + "..."
+    return label or "Figure"
+
+
+def is_narrative_vlm_description(desc: str) -> bool:
+    """Long generic VLM sentences are bad match labels."""
+    if not desc or len(desc.strip()) < 8:
+        return True
+    lower = desc.strip().lower()
+    return lower.startswith(
+        (
+            "the illustration",
+            "this illustration",
+            "the image",
+            "this image",
+            "the picture",
+            "this picture",
+            "the photo",
+        )
+    )
+
+
+def heuristic_short_label_from_description(desc: str) -> str:
+    """Best-effort name extraction without calling the API."""
+    desc = (desc or "").strip()
+    if not desc:
+        return ""
+    if not is_narrative_vlm_description(desc) and len(desc.split()) <= 6:
+        return normalize_short_label(desc)
+    patterns = (
+        r"portrait of (?:the )?([A-Za-z][^.,\"]{2,40})",
+        r"features (?:the )?([A-Z][^.,\"]{2,40})",
+        r"depicts (?:the )?([A-Z][^.,\"]{2,40})",
+        r"shows (?:the )?([A-Z][^.,\"]{2,40})",
+        r"subject is ([A-Za-z][^.,\"]{2,40})",
+        r"of ([A-Z][a-z]+(?: [A-Z][a-z]+)+)",
+    )
+    for pat in patterns:
+        m = re.search(pat, desc)
+        if m:
+            return normalize_short_label(m.group(1).strip())
+    return ""
+
+
 async def short_label_for_image(image_path: str) -> str:
     """Short 2-5 word label for picture-match questions."""
     label = await _vision_call(image_path, LABEL_PROMPT)
-    if not label:
-        return "Figure"
-    label = label.split("\n")[0].strip().strip('"').strip("'").strip(".")
-    if len(label) > 50:
-        label = label[:47] + "..."
-    return label or "Figure"
+    return normalize_short_label(label) if label else "Figure"
+
+
+async def short_labels_from_metadata(
+    items: list[tuple[str, str]],
+) -> list[str]:
+    """
+    Text-only labels for picture match when vision is skipped (low memory).
+    Each item is (filename_hint, stored_description).
+    """
+    n = len(items)
+    if n == 0:
+        return []
+
+    heuristics = [
+        heuristic_short_label_from_description(desc) or heuristic_short_label_from_description(hint)
+        for hint, desc in items
+    ]
+    if all(h and not is_narrative_vlm_description(h) for h in heuristics):
+        return heuristics
+
+    if not settings.GEMINI_API_KEY:
+        return [
+            h or normalize_short_label(hint.replace("_", " ")[:40]) or "Figure"
+            for (hint, _), h in zip(items, heuristics)
+        ]
+
+    lines = []
+    for i, (hint, desc) in enumerate(items, start=1):
+        body = desc.strip() if desc and not is_placeholder_description(desc) else hint
+        lines.append(f"{i}. {body[:350]}")
+
+    prompt = (
+        f"Label each numbered textbook figure with a unique short name (2-5 words).\n"
+        f"Use proper nouns for people and places (e.g. 'Taj Mahal', 'Droupadi Murmu').\n"
+        f"Never start labels with 'The illustration' or describe camera angles.\n"
+        f"Return JSON only: {{\"labels\": [ ... ]}} with exactly {n} strings in order.\n\n"
+        + "\n".join(lines)
+    )
+
+    try:
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(settings.LLM_MODEL)
+        response = await asyncio.wait_for(
+            model.generate_content_async(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                ),
+            ),
+            timeout=45,
+        )
+        data = json.loads(response.text or "{}")
+        labels = data.get("labels") or []
+        out: list[str] = []
+        for i in range(n):
+            raw = labels[i] if i < len(labels) else ""
+            lbl = normalize_short_label(str(raw)) if raw else ""
+            if not lbl or is_narrative_vlm_description(lbl):
+                lbl = heuristics[i] or normalize_short_label(items[i][0].replace("_", " "))
+            out.append(lbl or "Figure")
+        return out
+    except Exception as e:
+        logger.error("Text label batch failed: %s", e)
+        return [
+            heuristics[i]
+            or normalize_short_label(items[i][0].replace("_", " "))
+            or "Figure"
+            for i in range(n)
+        ]

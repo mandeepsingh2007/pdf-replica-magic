@@ -138,40 +138,34 @@ def _picture_match_pdf_block(
     )
 
     n = len(pictures)
-    left_rows = [[_picture_cell(pictures[i], image_paths, body)] for i in range(n)]
-    right_rows = [
-        [Paragraph(f"<b>({labels[i]['key']})</b> {_p(labels[i]['text'])}", body)]
-        for i in range(n)
-    ]
-    left_tbl = Table(left_rows, colWidths=[8.4 * cm])
-    right_tbl = Table(right_rows, colWidths=[8.4 * cm])
-    for tbl in (left_tbl, right_tbl):
-        tbl.setStyle(
-            TableStyle([
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ])
-        )
-
-    t = Table(
-        [
-            [
-                Paragraph("<b>Column A — Pictures</b>", body),
-                Paragraph("<b>Column B — Labels</b> (shuffled)", body),
-            ],
-            [left_tbl, right_tbl],
-        ],
-        colWidths=[8.7 * cm, 8.7 * cm],
+    label_style = ParagraphStyle(
+        "MatchLabel",
+        parent=body,
+        fontSize=10,
+        leading=14,
+        wordWrap="CJK",
     )
+    table_data: list[list[Any]] = [
+        [
+            Paragraph("<b>Column A — Pictures</b>", body),
+            Paragraph("<b>Column B — Labels</b> (shuffled)", body),
+        ]
+    ]
+    for i in range(n):
+        table_data.append([
+            _picture_cell(pictures[i], image_paths, body),
+            Paragraph(
+                f"<b>({labels[i]['key']})</b> {_p(labels[i]['text'])}",
+                label_style,
+            ),
+        ])
+    t = Table(table_data, colWidths=[8.7 * cm, 8.7 * cm])
     t.setStyle(
         TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
             ("TOPPADDING", (0, 0), (-1, -1), 4),
         ])
     )
@@ -180,15 +174,64 @@ def _picture_match_pdf_block(
     return block
 
 
-def _section_title(section_key: str) -> str:
-    titles = {
-        "section_A_MCQs": "SECTION A: Multiple Choice Questions",
-        "section_B_AssertionReason": "SECTION B: Assertion and Reason",
-        "section_C_Objective": "SECTION C: Objective Questions",
-        "section_D_MatchFollowing": "SECTION D: Match the Following",
-        "section_D_Subjective": "SECTION E: Subjective Questions",
-    }
-    return titles.get(section_key, section_key)
+def _with_serial_section_letters(
+    raw: list[tuple[str, list[dict], str | None]],
+) -> list[tuple[str, list[dict], str | None]]:
+    """Assign A, B, C, … in order; no letter repeats."""
+    out: list[tuple[str, list[dict], str | None]] = []
+    for i, (name, questions, subtitle) in enumerate(raw):
+        letter = chr(ord("A") + i)
+        out.append((f"SECTION {letter}: {name}", questions, subtitle))
+    return out
+
+
+def _pdf_section_blocks(test_data: dict) -> list[tuple[str, list[dict], str | None]]:
+    """Same section breakdown as the online Take Test page."""
+    raw: list[tuple[str, list[dict], str | None]] = []
+
+    if test_data.get("section_A_MCQs"):
+        raw.append(("Multiple Choice Questions", test_data["section_A_MCQs"], None))
+    if test_data.get("section_B_AssertionReason"):
+        raw.append(
+            ("Assertion and Reason", test_data["section_B_AssertionReason"], None)
+        )
+
+    objective = test_data.get("section_C_Objective") or []
+    true_false = [q for q in objective if q.get("type") == "true_false"]
+    fill_blank = [q for q in objective if q.get("type") == "fill_blank"]
+    if true_false:
+        raw.append(
+            (
+                "True / False",
+                true_false,
+                "State whether each statement is True or False.",
+            )
+        )
+    if fill_blank:
+        raw.append(("Fill in the Blanks", fill_blank, None))
+
+    match = test_data.get("section_D_MatchFollowing") or []
+    word_match = [q for q in match if q.get("type") == "word_match"][:1]
+    picture_match = [q for q in match if q.get("type") == "picture_match"][:1]
+    if word_match:
+        raw.append(
+            (
+                "Match the Following (Words)",
+                word_match,
+                "Match each item in Column A with the correct option in Column B.",
+            )
+        )
+    if picture_match:
+        raw.append(
+            (
+                "Match the Picture with Text",
+                picture_match,
+                "Match each of the 5 pictures with the correct label. Column B is shuffled.",
+            )
+        )
+    if test_data.get("section_D_Subjective"):
+        raw.append(("Subjective Questions", test_data["section_D_Subjective"], None))
+    return _with_serial_section_letters(raw)
 
 
 def build_test_pdf(
@@ -253,28 +296,18 @@ def build_test_pdf(
     ))
     story.append(Spacer(1, 0.4 * cm))
 
-    section_keys = [
-        "section_A_MCQs",
-        "section_B_AssertionReason",
-        "section_C_Objective",
-        "section_D_MatchFollowing",
-        "section_D_Subjective",
-    ]
-
     q_num = 0
-    for section_key in section_keys:
-        questions = test_data.get(section_key, [])
-        if section_key == "section_D_MatchFollowing":
-            word_qs = [q for q in questions if q.get("type") == "word_match"][:1]
-            pic_qs = [q for q in questions if q.get("type") == "picture_match"][:1]
-            questions = word_qs + pic_qs
+    for section_title, questions, section_subtitle in _pdf_section_blocks(test_data):
         if not questions:
             continue
 
         sec_marks = sum(int(q.get("marks") or 0) for q in questions)
         story.append(
-            Paragraph(f"{_section_title(section_key)} ({sec_marks} marks)", section_style)
+            Paragraph(f"{section_title} ({sec_marks} marks)", section_style)
         )
+        if section_subtitle:
+            story.append(Paragraph(_p(section_subtitle), body))
+            story.append(Spacer(1, 0.15 * cm))
 
         for q in questions:
             q_num += 1

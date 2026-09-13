@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 import os
@@ -16,7 +15,13 @@ from app.schemas.question_schemas import (
     ShortAnswerListSchema,
 )
 from app.services.llm_service import generate_structured_output
-from app.services.vlm_service import is_placeholder_description, short_label_for_image
+from app.services.vlm_service import (
+    heuristic_short_label_from_description,
+    is_narrative_vlm_description,
+    is_placeholder_description,
+    short_label_for_image,
+    short_labels_from_metadata,
+)
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,6 +32,19 @@ PDF_ONLY_RULES = (
     "Create questions strictly from the textbook excerpt. "
     "Each question must reference concepts, terms, or facts present in the excerpt. "
     "Do NOT use general knowledge outside the excerpt."
+)
+
+STANDALONE_PAPER_RULES = (
+    "The student sees ONLY the question on the paper — no textbook excerpt, passage, or reading block. "
+    "Never write 'provided text', 'the passage', 'the excerpt', 'above text', or 'following text'. "
+    "Ask directly (e.g. 'Which of the following is a Popular Indian?' not 'mentioned in the provided text')."
+)
+
+_PASSAGE_PHRASE_RE = re.compile(
+    r"provided text|the passage|reading passage|above text|following text|given text|"
+    r"in the text|from the text|according to the (?:passage|text|excerpt)|"
+    r"as (?:mentioned|stated|described) in",
+    re.I,
 )
 
 ProgressCallback = Callable[[int, str], Awaitable[None]]
@@ -247,24 +265,43 @@ def heuristic_quality_score(q_data: dict, context: str) -> float:
     return 0.88
 
 
+def _mcq_references_unshown_passage(q_data: dict) -> bool:
+    text = (q_data.get("question_text") or "").strip()
+    return bool(text and _PASSAGE_PHRASE_RE.search(text))
+
+
 async def generate_mcqs(
     context: str, count: int, subject_name: str, chapter_scope: str | None = None
 ) -> list[dict]:
-    prompt = (
-        f"Generate EXACTLY {count} multiple choice questions for {subject_name}. "
-        f"{PDF_ONLY_RULES} Ensure distractors are plausible."
-    )
-    data = await generate_structured_output(
-        prompt, MCQListSchema, context, subject_name, chapter_scope
-    )
-    questions = []
-    if "questions" in data:
+    questions: list[dict] = []
+    ask = max(count, count + 3)
+    for attempt in range(2):
+        if len(questions) >= count:
+            break
+        need = ask if attempt == 0 else count + (count - len(questions))
+        prompt = (
+            f"Generate EXACTLY {need} multiple choice questions for {subject_name}. "
+            f"{PDF_ONLY_RULES} {STANDALONE_PAPER_RULES} Ensure distractors are plausible."
+        )
+        data = await generate_structured_output(
+            prompt, MCQListSchema, context, subject_name, chapter_scope
+        )
+        if "questions" not in data:
+            if data.get("error"):
+                logger.error("MCQ generation failed: %s", data.get("error"))
+            continue
         for q_data in data["questions"]:
+            if len(questions) >= count:
+                break
+            if _mcq_references_unshown_passage(q_data):
+                logger.info(
+                    "Dropped MCQ referencing unseen passage: %s",
+                    (q_data.get("question_text") or "")[:80],
+                )
+                continue
             score = heuristic_quality_score(q_data, context)
             questions.append({"type": "mcq", "data": q_data, "score": score, "marks": 1})
-    elif data.get("error"):
-        logger.error("MCQ generation failed: %s", data.get("error"))
-    return questions
+    return questions[:count]
 
 
 async def generate_assertion_reason(
@@ -314,7 +351,7 @@ def _dedupe_labels(labels: list[str]) -> list[str]:
 
 
 def runtime_vision_enabled() -> bool:
-    """Gemini vision + image bytes OOM Render free tier (512MB) during picture-match."""
+    """Gemini vision + full image bytes can OOM on small hosts during picture-match."""
     if os.getenv("SKIP_RUNTIME_VLM") == "1":
         return False
     if os.getenv("SKIP_RUNTIME_VLM") == "0":
@@ -322,28 +359,41 @@ def runtime_vision_enabled() -> bool:
     return not os.getenv("RENDER")
 
 
-def _fallback_label_from_image(img: dict) -> str:
-    desc = (img.get("description") or img.get("caption") or "").strip()
-    if desc and len(desc) >= 3 and not is_placeholder_description(desc):
-        return desc[:40]
+def _filename_hint(img: dict) -> str:
     path = img.get("image_path") or ""
     stem = os.path.splitext(os.path.basename(path))[0]
     stem = re.sub(r"^PDF\d+_P\d+_IMG\d+", "Figure", stem, flags=re.I)
-    stem = stem.replace("_", " ").strip() or "Figure"
-    return stem[:40]
+    return stem.replace("_", " ").strip() or "Figure"
+
+
+def _fallback_label_from_image(img: dict) -> str:
+    desc = (img.get("description") or img.get("caption") or "").strip()
+    if desc and not is_placeholder_description(desc):
+        short = heuristic_short_label_from_description(desc)
+        if short and not is_narrative_vlm_description(short):
+            return short
+    return _filename_hint(img)[:50]
 
 
 async def _labels_for_images(selected: list[dict]) -> list[str]:
-    """One short label per image — vision API only when not on memory-constrained hosting."""
-    labels: list[str] = []
-    for img in selected:
-        if runtime_vision_enabled():
+    """One short, unique label per image — vision when allowed, else text-only batch."""
+    if runtime_vision_enabled():
+        labels: list[str] = []
+        for img in selected:
             path = img.get("image_path")
             if path and os.path.isfile(path):
                 label = await short_label_for_image(path)
-                labels.append(label or _fallback_label_from_image(img))
-                continue
-        labels.append(_fallback_label_from_image(img))
+                if label and label != "Figure" and not is_narrative_vlm_description(label):
+                    labels.append(label)
+                    continue
+            labels.append(_fallback_label_from_image(img))
+        return _dedupe_labels(labels)
+
+    meta: list[tuple[str, str]] = []
+    for img in selected:
+        desc = (img.get("description") or img.get("caption") or "").strip()
+        meta.append((_filename_hint(img), desc))
+    labels = await short_labels_from_metadata(meta)
     return _dedupe_labels(labels)
 
 
@@ -660,9 +710,6 @@ async def generate_all_types(
     else:
         generators = all_generators
 
-    if os.getenv("LOW_MEMORY") == "1" and any(g[2] == "picture_match" for g in generators):
-        generators.sort(key=lambda g: (0 if g[2] == "picture_match" else 1, g[3]))
-
     if not generators:
         return []
 
@@ -696,9 +743,5 @@ async def generate_all_types(
 
         all_questions.extend(picked)
         logger.info("%s: generated %d, kept %d", label, len(result), len(picked))
-        del result
-        del picked
-        del context
-        gc.collect()
 
     return all_questions

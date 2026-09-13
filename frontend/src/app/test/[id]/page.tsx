@@ -78,6 +78,38 @@ function collectQuestions(testData: Record<string, QuestionDisplay[]>): Question
   return all;
 }
 
+type SectionLetterKey =
+  | "mcq"
+  | "assertionReason"
+  | "trueFalse"
+  | "fillBlank"
+  | "wordMatch"
+  | "pictureMatch"
+  | "subjective";
+
+function assignSectionLetters(
+  testData: Record<string, QuestionDisplay[]> | undefined
+): Partial<Record<SectionLetterKey, string>> {
+  if (!testData) return {};
+  let n = 0;
+  const next = () => String.fromCharCode(65 + n++);
+  const letters: Partial<Record<SectionLetterKey, string>> = {};
+  if (testData.section_A_MCQs?.length) letters.mcq = next();
+  if (testData.section_B_AssertionReason?.length) letters.assertionReason = next();
+  const objective = testData.section_C_Objective || [];
+  if (objective.some((q) => q.type === "true_false")) letters.trueFalse = next();
+  if (objective.some((q) => q.type === "fill_blank")) letters.fillBlank = next();
+  const match = testData.section_D_MatchFollowing || [];
+  if (match.some((q) => q.type === "word_match")) letters.wordMatch = next();
+  if (match.some((q) => q.type === "picture_match")) letters.pictureMatch = next();
+  if (testData.section_D_Subjective?.length) letters.subjective = next();
+  return letters;
+}
+
+function sectionHeading(letter: string | undefined, name: string): string {
+  return letter ? `SECTION ${letter}: ${name}` : name;
+}
+
 function MatchImage({ src, alt }: { src: string; alt: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
@@ -137,41 +169,44 @@ function TraditionalMatchLayout({
         <div className="px-3 py-2 border-r border-gray-200 sm:px-4">{leftTitle}</div>
         <div className="px-3 py-2 sm:px-4">{rightTitle}</div>
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-0">
-        <div className="border border-gray-200 divide-y divide-gray-100 rounded-lg sm:border-0 sm:rounded-none sm:border-r sm:divide-y">
-          {leftItems.map((item) => (
-            <div key={item.key} className="px-3 py-3 sm:px-4 sm:py-4 min-h-[7.5rem]">
-              <div className="flex items-start gap-2">
-                <span className="font-bold text-gray-800 shrink-0">({item.key})</span>
-                <div className="min-w-0 flex-1">{item.content}</div>
-              </div>
-              <select
-                value={matchAns[item.key] || ""}
-                onChange={(e) => onSelect(item.key, e.target.value)}
-                disabled={disabled}
-                className="w-full px-2 py-1.5 mt-2 text-xs border border-gray-300 rounded-md bg-white sm:text-sm"
-              >
-                <option value="">Match →</option>
-                {rightItems.map((opt) => (
-                  <option key={opt.key} value={opt.key}>
-                    ({opt.key}) {opt.text}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </div>
-        <div className="border border-gray-200 divide-y divide-gray-100 rounded-lg bg-gray-50/50 sm:border-0 sm:rounded-none sm:divide-y">
-          {rightItems.map((opt) => (
+      <div className="divide-y divide-gray-100">
+        {leftItems.map((item, rowIdx) => {
+          const opt = rightItems[rowIdx];
+          return (
             <div
-              key={opt.key}
-              className="flex items-start gap-2 px-3 py-3 text-sm leading-relaxed break-words min-h-[7.5rem] sm:px-4 sm:py-4 sm:text-base"
+              key={item.key}
+              className="grid grid-cols-1 sm:grid-cols-2 sm:divide-x sm:divide-gray-100"
             >
-              <span className="font-bold text-gray-800 shrink-0">({opt.key})</span>
-              <span>{opt.text}</span>
+              <div className="px-3 py-3 sm:px-4 sm:py-4 min-h-[7.5rem]">
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-gray-800 shrink-0">({item.key})</span>
+                  <div className="min-w-0 flex-1">{item.content}</div>
+                </div>
+                <select
+                  value={matchAns[item.key] || ""}
+                  onChange={(e) => onSelect(item.key, e.target.value)}
+                  disabled={disabled}
+                  className="w-full px-2 py-1.5 mt-2 text-xs border border-gray-300 rounded-md bg-white sm:text-sm"
+                >
+                  <option value="">Match →</option>
+                  {rightItems.map((choice) => (
+                    <option key={choice.key} value={choice.key}>
+                      ({choice.key}) {choice.text}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {opt ? (
+                <div className="flex items-start gap-2 px-3 py-3 text-sm leading-relaxed break-words bg-gray-50/50 min-h-[7.5rem] sm:px-4 sm:py-4 sm:text-base">
+                  <span className="font-bold text-gray-800 shrink-0">({opt.key})</span>
+                  <span className="min-w-0 flex-1">{opt.text}</span>
+                </div>
+              ) : (
+                <div className="hidden sm:block" />
+              )}
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -238,6 +273,11 @@ export default function TestPaperPage() {
     if (!gradeResult) return new Map();
     return new Map(gradeResult.results.map((r) => [r.question_id, r]));
   }, [gradeResult]);
+
+  const sectionLetters = useMemo(
+    () => assignSectionLetters(testMeta?.test_data),
+    [testMeta?.test_data]
+  );
 
   useEffect(() => {
     const fetchTest = async () => {
@@ -392,7 +432,7 @@ export default function TestPaperPage() {
 
         {content?.section_A_MCQs?.length > 0 && (
           <Section
-            title="SECTION A: Multiple Choice Questions"
+            title={sectionHeading(sectionLetters.mcq, "Multiple Choice Questions")}
             questions={content.section_A_MCQs}
             renderQuestion={(q, i) => {
               const d = q.display as { question_text: string; options: string[] };
@@ -439,7 +479,7 @@ export default function TestPaperPage() {
 
         {content?.section_B_AssertionReason?.length > 0 && (
           <Section
-            title="SECTION B: Assertion and Reason"
+            title={sectionHeading(sectionLetters.assertionReason, "Assertion and Reason")}
             subtitle="Direction: Choose the correct option for each Assertion-Reason pair."
             questions={content.section_B_AssertionReason}
             renderQuestion={(q, i) => {
@@ -491,18 +531,15 @@ export default function TestPaperPage() {
         {content?.section_C_Objective?.length > 0 && (() => {
           const trueFalseQs = content.section_C_Objective.filter((q) => q.type === "true_false");
           const fillBlankQs = content.section_C_Objective.filter((q) => q.type === "fill_blank");
-          let cNumber = 0;
-
           return (
             <>
               {trueFalseQs.length > 0 && (
                 <Section
-                  title="SECTION C: True / False"
+                  title={sectionHeading(sectionLetters.trueFalse, "True / False")}
                   subtitle="State whether each statement is True or False."
                   questions={trueFalseQs}
-                  renderQuestion={(q) => {
-                    cNumber += 1;
-                    const num = cNumber;
+                  renderQuestion={(q, i) => {
+                    const num = i + 1;
                     const d = q.display as { statement?: string };
                     const result = gradeMap.get(q.id);
                     return (
@@ -541,11 +578,10 @@ export default function TestPaperPage() {
 
               {fillBlankQs.length > 0 && (
                 <Section
-                  title="SECTION C: Fill in the Blanks"
+                  title={sectionHeading(sectionLetters.fillBlank, "Fill in the Blanks")}
                   questions={fillBlankQs}
-                  renderQuestion={(q) => {
-                    cNumber += 1;
-                    const num = cNumber;
+                  renderQuestion={(q, i) => {
+                    const num = i + 1;
                     const d = q.display as { sentence_with_blank?: string };
                     const result = gradeMap.get(q.id);
                     return (
@@ -579,18 +615,18 @@ export default function TestPaperPage() {
               .filter((q) => q.type === "picture_match")
               .slice(0, 1);
             const legacyQs = content.section_D_Subjective || [];
-            let dNumber = 0;
-
             return (
               <>
                 {wordMatchQs.length > 0 && (
                   <Section
-                    title="SECTION D: Match the Following (Words)"
+                    title={sectionHeading(
+                      sectionLetters.wordMatch,
+                      "Match the Following (Words)"
+                    )}
                     subtitle="Match each item in Column A with the correct option in Column B."
                     questions={wordMatchQs}
-                    renderQuestion={(q) => {
-                      dNumber += 1;
-                      const num = dNumber;
+                    renderQuestion={(q, i) => {
+                      const num = i + 1;
                       const d = q.display as {
                         column_a: { key: string; text: string }[];
                         column_b: { key: string; text: string }[];
@@ -623,12 +659,14 @@ export default function TestPaperPage() {
 
                 {pictureMatchQs.length > 0 && (
                   <Section
-                    title="SECTION D: Match the Picture with Text"
+                    title={sectionHeading(
+                      sectionLetters.pictureMatch,
+                      "Match the Picture with Text"
+                    )}
                     subtitle="Match each of the 5 pictures with the correct label. Column B is shuffled."
                     questions={pictureMatchQs}
-                    renderQuestion={(q) => {
-                      dNumber += 1;
-                      const num = dNumber;
+                    renderQuestion={(q, i) => {
+                      const num = i + 1;
                       const d = q.display as {
                         pictures: { key: string; image_id?: number; caption: string }[];
                         labels: { key: string; text: string }[];
@@ -672,7 +710,7 @@ export default function TestPaperPage() {
 
                 {legacyQs.length > 0 && (
                   <Section
-                    title="SECTION D: Subjective Questions"
+                    title={sectionHeading(sectionLetters.subjective, "Subjective Questions")}
                     questions={legacyQs}
                     renderQuestion={(q, i) => {
                       const d = q.display as { question: string };
