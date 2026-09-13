@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const AUTH_COOKIE = "tg_auth";
 
-const PUBLIC_PATHS = ["/", "/gate", "/login"];
+const PUBLIC_PATHS = ["/", "/gate", "/login", "/semester"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

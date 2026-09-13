@@ -38,7 +38,7 @@ export function Navigation() {
 
   const onNavClick = (id: string) => {
     if (id === "semester-book-portal") {
-      router.push("/login");
+      router.push("/semester");
       return;
     }
     const element = document.getElementById(id);

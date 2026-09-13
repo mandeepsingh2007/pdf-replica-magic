@@ -39,7 +39,7 @@ export function NegraphicsHome() {
   const [currentGaloreLeftSlide, setCurrentGaloreLeftSlide] = useState(0);
   const [currentGaloreRightSlide, setCurrentGaloreRightSlide] = useState(0);
 
-  const openLogin = () => router.push("/login");
+  const openSemesterPortal = () => router.push("/semester");
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
@@ -91,7 +91,7 @@ export function NegraphicsHome() {
                   Teachers can sign in to create custom question papers, unit tests, and answer keys
                   from your semester book content in seconds.
                 </p>
-                <CTAButton onClick={openLogin}>OPEN TEST GENERATOR</CTAButton>
+                <CTAButton onClick={openSemesterPortal}>OPEN TEST GENERATOR</CTAButton>
               </div>
               <div className="flex-shrink-0 lg:ml-8 mb-6 lg:mb-0 order-1 lg:order-2">
                 <img
