@@ -81,8 +81,8 @@ export function NegraphicsHome() {
           <div className="border-2 lg:border-4 ng-border-primary">
             <div className="ng-bg-primary ng-text-primary-fg py-6 lg:py-8 px-4 lg:px-8 flex flex-col lg:flex-row items-center justify-between">
               <div className="flex-1 order-2 lg:order-1">
-                <h2 className="text-2xl lg:text-4xl font-bold mb-2 lg:mb-4">SEMESTER BOOK</h2>
-                <h2 className="text-2xl lg:text-4xl font-bold mb-4 lg:mb-6">DIGITAL PORTAL</h2>
+                <h2 className="text-2xl lg:text-4xl font-bold mb-2 lg:mb-4">Semester Book</h2>
+                <h2 className="text-2xl lg:text-4xl font-bold mb-4 lg:mb-6">Digital Contents</h2>
                 <p className="mb-3 lg:mb-4 max-w-2xl text-sm lg:text-base">
                   Curriculum-aligned e-books, lesson plans, worksheets, and an AI-powered test
                   generator for smart classrooms — built for NEP and NCF aligned teaching.
@@ -91,7 +91,7 @@ export function NegraphicsHome() {
                   Teachers can sign in to create custom question papers, unit tests, and answer keys
                   from your semester book content in seconds.
                 </p>
-                <CTAButton onClick={openSemesterPortal}>OPEN TEST GENERATOR</CTAButton>
+                <CTAButton onClick={openSemesterPortal}>OPEN PORTAL</CTAButton>
               </div>
               <div className="flex-shrink-0 lg:ml-8 mb-6 lg:mb-0 order-1 lg:order-2">
                 <img
