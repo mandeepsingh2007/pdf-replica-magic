@@ -19,10 +19,27 @@ DESCRIBE_PROMPT = """Describe this textbook illustration in 1-2 sentences.
 Name the main subject clearly (person, animal, plant, object, or diagram).
 Output ONLY the description."""
 
-LABEL_PROMPT = """What is shown in this textbook illustration?
-Reply with ONLY a short label (2-5 words) naming the main subject.
-Examples: "Green parrot", "Boy washing hands", "Frog catching flies"
+LABEL_PROMPT = """Identify this textbook photo. Reply with ONLY the proper name (2-5 words).
+
+Rules:
+- Famous person → full name (Narendra Modi, Amitabh Bachchan, Virat Kohli, Droupadi Murmu, P V Sindhu).
+- Famous place/monument → official name (Taj Mahal, Red Fort, Golden Temple).
+- Food/object → common name (Samosa, Pani Puri).
+- NEVER describe clothes, pose, glasses, saree, cap, smile, medal, or camera angle.
+- NEVER write "man/woman/person/athlete in/with ...".
 No punctuation, no extra text."""
+
+GENERIC_APPEARANCE_RE = re.compile(
+    r"\b(man|woman|person|boy|girl|lady|gentleman|athlete|player|"
+    r"child|kid|male|female)\b.+\b(in|with|wearing|holding|smiling|"
+    r"glasses|saree|sari|cap|hat|medal|shirt|dress|turban)\b",
+    re.I,
+)
+POSE_TAIL_RE = re.compile(
+    r"\s+(smiling|standing|sitting|wearing.+|in a .+|with glasses|"
+    r"with a medal|holding.+)$",
+    re.I,
+)
 
 
 def is_placeholder_description(desc: str | None) -> bool:
@@ -81,8 +98,32 @@ _JUNK_LABEL_RE = re.compile(
 )
 
 
+def is_generic_appearance_label(label: str) -> bool:
+    """'Man with glasses' is not a usable match label."""
+    s = (label or "").strip()
+    if not s:
+        return True
+    if GENERIC_APPEARANCE_RE.search(s):
+        return True
+    low = s.lower()
+    if low.startswith(
+        (
+            "man ",
+            "woman ",
+            "person ",
+            "a man",
+            "a woman",
+            "the man",
+            "the woman",
+            "athlete ",
+        )
+    ):
+        return True
+    return False
+
+
 def is_junk_label(label: str) -> bool:
-    """Student-facing labels must not be file names or page/fig codes."""
+    """Student-facing labels must not be file names, page codes, or clothing descriptions."""
     s = (label or "").strip()
     if not s or len(s) < 2:
         return True
@@ -93,11 +134,14 @@ def is_junk_label(label: str) -> bool:
         return True
     if re.match(r"^page\d+\s*fig\d+", low):
         return True
+    if is_generic_appearance_label(s):
+        return True
     return False
 
 
 def normalize_short_label(label: str) -> str:
     label = (label or "").split("\n")[0].strip().strip('"').strip("'").strip(".")
+    label = POSE_TAIL_RE.sub("", label).strip()
     if len(label) > 60:
         label = label[:57] + "..."
     if is_junk_label(label):
@@ -151,7 +195,7 @@ async def short_label_for_image(image_path: str) -> str:
     return normalize_short_label(label) if label else ""
 
 
-async def short_label_for_image_lowmem(image_path: str, max_px: int = 384) -> str:
+async def short_label_for_image_lowmem(image_path: str, max_px: int = 512) -> str:
     """Vision labels using a small JPEG — safe on 1GB hosts when run one image at a time."""
     path = Path(image_path)
     if not path.is_file():
@@ -205,9 +249,9 @@ async def short_labels_from_metadata(
         lines.append(f"{i}. {body[:350]}")
 
     prompt = (
-        f"Label each numbered textbook figure with a unique short name (2-5 words).\n"
-        f"Use proper nouns for people and places (e.g. 'Taj Mahal', 'Droupadi Murmu').\n"
-        f"Never start labels with 'The illustration' or describe camera angles.\n"
+        f"Give the official name for each numbered textbook figure (2-5 words).\n"
+        f"Famous people must be named (Narendra Modi, Amitabh Bachchan, Virat Kohli).\n"
+        f"Never describe clothes, glasses, saree, cap, smile, or 'man/woman in…'.\n"
         f"Return JSON only: {{\"labels\": [ ... ]}} with exactly {n} strings in order.\n\n"
         + "\n".join(lines)
     )
@@ -276,9 +320,10 @@ async def enrich_picture_match_labels(
             lines.append(f"{len(lines) + 1}. {body}")
         if lines:
             prompt = (
-                f"Give a unique 2-5 word label for each numbered figure "
-                f"(person name, place, food, object). JSON: {{\"labels\": [...]}} "
-                f"with exactly {len(lines)} strings.\n\n" + "\n".join(lines)
+                f"Give the official proper name for each numbered figure "
+                f"(full person name, monument, food). Never describe clothing. "
+                f"JSON: {{\"labels\": [...]}} with exactly {len(lines)} strings.\n\n"
+                + "\n".join(lines)
             )
             try:
                 genai.configure(api_key=settings.GEMINI_API_KEY)

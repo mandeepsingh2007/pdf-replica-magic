@@ -19,10 +19,9 @@ from app.services.vlm_service import (
     enrich_picture_match_labels,
     heuristic_short_label_from_description,
     is_junk_label,
-    is_narrative_vlm_description,
     is_placeholder_description,
     short_label_for_image,
-    short_labels_from_metadata,
+    short_label_for_image_lowmem,
 )
 from app.core.config import settings
 
@@ -369,28 +368,20 @@ def _filename_hint(img: dict) -> str:
 
 
 async def _labels_for_images(selected: list[dict]) -> list[str]:
-    """One short, unique label per image — never file names like page4 fig2."""
+    """Proper names from the photo — never filenames or 'man in glasses'."""
     labels: list[str] = []
-    if runtime_vision_enabled():
-        for img in selected:
-            path = img.get("image_path")
-            label = ""
-            if path and os.path.isfile(path):
+    for img in selected:
+        path = img.get("image_path")
+        label = ""
+        if path and os.path.isfile(path):
+            if runtime_vision_enabled():
                 label = await short_label_for_image(path)
             if not label or is_junk_label(label):
-                desc = (img.get("description") or img.get("caption") or "").strip()
-                label = heuristic_short_label_from_description(desc)
-            labels.append(label or "")
-
-    meta: list[tuple[str, str]] = []
-    for img in selected:
-        desc = (img.get("description") or img.get("caption") or "").strip()
-        meta.append((_filename_hint(img), desc))
-    if not labels:
-        labels = await short_labels_from_metadata(meta)
-    elif len(labels) < len(selected):
-        labels.extend([""] * (len(selected) - len(labels)))
-
+                label = await short_label_for_image_lowmem(path)
+        if not label or is_junk_label(label):
+            desc = (img.get("description") or img.get("caption") or "").strip()
+            label = heuristic_short_label_from_description(desc)
+        labels.append(label or "")
     labels = await enrich_picture_match_labels(labels, selected)
     return _dedupe_labels(labels)
 
