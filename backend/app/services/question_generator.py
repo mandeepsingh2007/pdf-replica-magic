@@ -660,6 +660,9 @@ async def generate_all_types(
     else:
         generators = all_generators
 
+    if os.getenv("LOW_MEMORY") == "1" and any(g[2] == "picture_match" for g in generators):
+        generators.sort(key=lambda g: (0 if g[2] == "picture_match" else 1, g[3]))
+
     if not generators:
         return []
 
