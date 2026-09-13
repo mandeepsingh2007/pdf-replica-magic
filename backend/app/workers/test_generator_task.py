@@ -150,6 +150,11 @@ async def generate_test_async(request_data: dict, task_id: str):
 
             if include_types:
                 include_types = [t for t in include_types if t in VALID_QUESTION_TYPES]
+                if os.getenv("LOW_MEMORY") == "1" and "picture_match" in include_types:
+                    include_types = [t for t in include_types if t != "picture_match"]
+                    logger.warning(
+                        "LOW_MEMORY=1: skipping picture_match on this host (~1GB RAM)"
+                    )
                 if not include_types:
                     raise Exception("No valid question types selected.")
 
