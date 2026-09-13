@@ -20,20 +20,9 @@ from app.services.question_generator import generate_all_types, VALID_QUESTION_T
 from app.services.optimizer import assemble_fixed_per_type, structure_final_test_json
 from app.services.chapter_service import extract_chapters, filter_chunks_by_chapters
 from app.services.image_quality import is_panel_path, original_stem_from_panel, split_illustration_file
-from app.core.config import settings
+from app.core.config import settings, min_context_chars_for_generation
 
 logger = logging.getLogger(__name__)
-
-
-def should_expand_stacked_images() -> bool:
-    """PIL/numpy panel splitting can OOM Render's 512MB web instance — skip there by default."""
-    if os.getenv("SKIP_IMAGE_EXPAND") == "1":
-        return False
-    if os.getenv("SKIP_IMAGE_EXPAND") == "0":
-        return True
-    if os.getenv("RENDER"):
-        return False
-    return True
 
 
 async def expand_stacked_images(
@@ -58,7 +47,7 @@ async def expand_stacked_images(
             expanded.append(img)
             continue
 
-        panels = await asyncio.to_thread(split_illustration_file, path)
+        panels = split_illustration_file(path)
         if len(panels) < 2:
             expanded.append(img)
             continue
@@ -164,11 +153,18 @@ async def generate_test_async(request_data: dict, task_id: str):
                     "PDF not ingested for this subject. Run: python seed_pdfs.py --force"
                 )
 
-            total_chars = sum(len(c.content or "") for c in chunks)
+            context = "\n\n".join([c.content for c in chunks])
+            min_chars = min_context_chars_for_generation(chapter_ids)
 
-            if total_chars < settings.MIN_CONTEXT_CHARS:
+            if len(context) < min_chars:
+                if chapter_ids:
+                    raise Exception(
+                        f"Not enough text in the selected chapter(s) ({len(context)} chars; "
+                        f"need at least {min_chars}). Try selecting more chapters, or chapters "
+                        "with more reading pages."
+                    )
                 raise Exception(
-                    f"Insufficient textbook content ({total_chars} chars). "
+                    f"Insufficient textbook content ({len(context)} chars). "
                     "PDF may not have been OCR'd correctly. Run: python seed_pdfs.py --force"
                 )
 
@@ -212,18 +208,8 @@ async def generate_test_async(request_data: dict, task_id: str):
                         ):
                             filtered_images.append(img)
                     image_metadata = filtered_images
-            if document_id and should_expand_stacked_images():
+            if document_id and os.getenv("SKIP_IMAGE_EXPAND") != "1":
                 image_metadata = await expand_stacked_images(db, document_id, image_metadata)
-            elif document_id and os.getenv("RENDER"):
-                logger.info(
-                    "Skipping stacked-image expand on Render (set SKIP_IMAGE_EXPAND=0 to force)"
-                )
-            if os.getenv("LOW_MEMORY") == "1" and len(image_metadata) > 24:
-                image_metadata = image_metadata[:24]
-                logger.info(
-                    "LOW_MEMORY: using first %d images for picture-match",
-                    len(image_metadata),
-                )
             logger.info(
                 "Chapter scope: %s | %d images for picture-match",
                 chapter_scope or "all chapters",

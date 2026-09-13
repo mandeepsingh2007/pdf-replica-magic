@@ -34,9 +34,20 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     MIN_CONTEXT_CHARS: int = 2000
+    # Selected-chapter slices can be short (Class 1, image-heavy pages).
+    MIN_CHAPTER_CONTEXT_CHARS: int = 250
     MAX_LLM_CONTEXT_CHARS: int = 12000
     LLM_CALL_TIMEOUT_SEC: int = 120
     CHUNKS_PER_GENERATION_BATCH: int = 10
 
 
 settings = Settings()
+
+
+def min_context_chars_for_generation(chapter_ids: list | None) -> int:
+    """Full book needs more text; a few selected chapters can be shorter."""
+    if not chapter_ids:
+        return settings.MIN_CONTEXT_CHARS
+    n = max(1, len(chapter_ids))
+    scaled = settings.MIN_CHAPTER_CONTEXT_CHARS * n
+    return max(settings.MIN_CHAPTER_CONTEXT_CHARS, min(settings.MIN_CONTEXT_CHARS, scaled))
