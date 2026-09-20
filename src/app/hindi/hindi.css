@@ -1,0 +1,342 @@
+html:has(.hindi-portal),
+body:has(.hindi-portal) {
+  background: #fff9e6 !important;
+  color: #1e293b;
+}
+
+.hindi-portal {
+  font-family: "Fredoka", "Baloo 2", system-ui, sans-serif;
+  background-color: #fff9e6;
+  background-image:
+    radial-gradient(#ffe28a 1.5px, transparent 1.5px),
+    radial-gradient(#ffe28a 1.5px, #fff9e6 1.5px);
+  background-size: 40px 40px;
+  background-position: 0 0, 20px 20px;
+  min-height: 100vh;
+  color: #1e293b;
+}
+
+.hindi-portal .hp-wrap {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2rem;
+}
+
+.hindi-portal .hp-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.95);
+  border: 3px solid #0f172a;
+  border-radius: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  box-shadow: 0 5px 0 #2b2d42;
+}
+
+.hindi-portal .hp-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.hindi-portal .hp-logo {
+  width: 3rem;
+  height: 3rem;
+  background: #ff6b6b;
+  border: 2px solid #0f172a;
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  box-shadow: 2px 2px 0 #2b2d42;
+  transform: rotate(-3deg);
+}
+
+.hindi-portal .hp-kicker {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9b5de5;
+}
+
+.hindi-portal .hp-title {
+  font-family: "Baloo 2", "Fredoka", sans-serif;
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.hindi-portal .hp-class {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 800;
+}
+
+.hindi-portal .hp-class select {
+  border: 2px solid #0f172a;
+  border-radius: 999px;
+  background: #ffd124;
+  padding: 0.4rem 0.85rem;
+  font-weight: 800;
+  box-shadow: 2px 2px 0 #2b2d42;
+}
+
+.hindi-portal .hp-hero {
+  text-align: center;
+  max-width: 48rem;
+  margin: 2.5rem auto 2rem;
+}
+
+.hindi-portal .hp-badge {
+  display: inline-flex;
+  padding: 0.4rem 1.1rem;
+  border-radius: 999px;
+  background: #4ecdc4;
+  border: 2px solid #0f172a;
+  font-weight: 800;
+  font-size: 0.9rem;
+  box-shadow: 3px 3px 0 #2b2d42;
+}
+
+.hindi-portal .hp-h1 {
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800;
+  margin: 0.85rem 0 0.4rem;
+  line-height: 1.15;
+}
+
+.hindi-portal .hp-h1 em {
+  font-style: normal;
+  color: #ff6b6b;
+  text-decoration: underline wavy #ffd124 4px;
+}
+
+.hindi-portal .hp-sub {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.hindi-portal .hp-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .hindi-portal .hp-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.hindi-portal .hp-card {
+  border: 3.5px solid #2b2d42;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 6px 7px 0 #2b2d42;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hindi-portal .hp-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 8px 12px 0 #2b2d42;
+}
+
+.hindi-portal .hp-card-ebook {
+  background: linear-gradient(180deg, #fffbeb, #ffedd5);
+}
+.hindi-portal .hp-card-video {
+  background: linear-gradient(180deg, #f0f9ff, #dbeafe);
+}
+.hindi-portal .hp-card-test {
+  background: linear-gradient(180deg, #fff1f2, #fce7f3);
+}
+
+.hindi-portal .hp-pill {
+  display: inline-block;
+  border: 2px solid #0f172a;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  box-shadow: 2px 2px 0 #2b2d42;
+}
+
+.hindi-portal .hp-card h2 {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 1.7rem;
+  font-weight: 800;
+  margin: 1rem 0 0.35rem;
+  text-align: center;
+}
+
+.hindi-portal .hp-card p {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #334155;
+  flex: 1;
+  margin-bottom: 1.25rem;
+}
+
+.hindi-portal .hp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: 3px solid #0f172a;
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  font-weight: 800;
+  box-shadow: 4px 4px 0 #2b2d42;
+  cursor: pointer;
+  text-align: center;
+}
+
+.hindi-portal .hp-btn-yellow {
+  background: #ffd124;
+  color: #0f172a;
+}
+.hindi-portal .hp-btn-sky {
+  background: #38b6ff;
+  color: #fff;
+}
+.hindi-portal .hp-btn-coral {
+  background: #ff6b6b;
+  color: #fff;
+}
+
+.hindi-portal .hp-foot {
+  text-align: center;
+  margin-top: 2rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.hindi-portal .hp-back {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 800;
+  color: #0f172a;
+  text-decoration: none;
+  border: 2px solid #0f172a;
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  background: #fff;
+  box-shadow: 2px 2px 0 #2b2d42;
+}
+
+.hindi-portal .hp-hero-sm {
+  margin: 1.75rem auto 1.5rem;
+}
+
+.hindi-portal .hp-video-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  max-width: 56rem;
+  margin: 0 auto 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .hindi-portal .hp-video-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.hindi-portal .hp-video-card {
+  border: 3.5px solid #2b2d42;
+  border-radius: 1.5rem;
+  background: linear-gradient(180deg, #f0f9ff, #dbeafe);
+  box-shadow: 6px 7px 0 #2b2d42;
+  overflow: hidden;
+  padding: 0.85rem;
+}
+
+.hindi-portal .hp-video-card.is-active {
+  background: linear-gradient(180deg, #e0f2fe, #bae6fd);
+  box-shadow: 8px 10px 0 #2b2d42;
+}
+
+.hindi-portal .hp-video-hit {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.hindi-portal .hp-video-frame {
+  position: relative;
+  border: 3px solid #0f172a;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #0f172a;
+  aspect-ratio: 16 / 9;
+}
+
+.hindi-portal .hp-video-frame video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0f172a;
+}
+
+.hindi-portal .hp-video-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.35);
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hindi-portal .hp-video-meta {
+  padding: 0.85rem 0.25rem 0.15rem;
+}
+
+.hindi-portal .hp-video-meta h2 {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0 0 0.2rem;
+  text-align: left;
+}
+
+.hindi-portal .hp-video-meta p {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+  text-align: left;
+}
+
+.hindi-portal .hp-video-start {
+  margin-top: 0.25rem;
+}

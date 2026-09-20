@@ -1,4 +1,6 @@
+import glob
 import os
+import re
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,8 +55,20 @@ async def process_pdf_async(document_id: int, task_id: str) -> None:
             await db.execute(delete(ExtractedImage).where(ExtractedImage.document_id == document.id))
             await db.commit()
 
+            start_page = max(1, int(os.environ.get("EXTRACT_START_PAGE", "1")))
+            if os.path.isdir(image_out_dir):
+                for path in glob.glob(os.path.join(image_out_dir, "page*_fig*")):
+                    m = re.search(r"page(\d+)_", os.path.basename(path))
+                    if m and int(m.group(1)) >= start_page:
+                        try:
+                            os.remove(path)
+                        except OSError:
+                            pass
+
             await update_task_progress(db, task_id, 30, "Extracting text and images from PDF")
-            text_blocks, images = extract_pdf_data(file_path, image_out_dir)
+            text_blocks, images = extract_pdf_data(
+                file_path, image_out_dir, start_page=start_page
+            )
 
             await update_task_progress(
                 db, task_id, 50, f"Analyzing {len(images)} extracted images with AI"

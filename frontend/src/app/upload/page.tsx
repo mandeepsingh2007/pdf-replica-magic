@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 export default async function UploadPage() {
-  const { subjects, error } = await fetchSubjectsOnServer();
+  const { subjects, error } = await fetchSubjectsOnServer("english");
 
   return (
     <div className="min-h-screen bg-background p-6">

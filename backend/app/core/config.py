@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,12 +26,14 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GOOGLE_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     
-    LLM_PROVIDER: str = "gemini"
-    LLM_MODEL: str = "gemini-2.5-flash"
+    LLM_PROVIDER: str = "groq"
+    LLM_MODEL: str = "qwen/qwen3.8-27b"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     MIN_CONTEXT_CHARS: int = 2000
@@ -39,6 +42,12 @@ class Settings(BaseSettings):
     MAX_LLM_CONTEXT_CHARS: int = 12000
     LLM_CALL_TIMEOUT_SEC: int = 120
     CHUNKS_PER_GENERATION_BATCH: int = 10
+
+    @model_validator(mode="after")
+    def _use_google_key_for_gemini(self) -> "Settings":
+        if not self.GEMINI_API_KEY and self.GOOGLE_API_KEY:
+            self.GEMINI_API_KEY = self.GOOGLE_API_KEY
+        return self
 
 
 settings = Settings()

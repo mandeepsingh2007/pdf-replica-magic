@@ -1,3 +1,4 @@
+import gc
 import json
 import logging
 import os
@@ -13,15 +14,19 @@ from app.schemas.question_schemas import (
     PictureMatchListSchema,
     AssertionReasonListSchema,
     ShortAnswerListSchema,
+    OralListSchema,
+    WhoSaidListSchema,
+    CreativeWorkListSchema,
 )
 from app.services.llm_service import generate_structured_output
+from app.services.image_label_service import gemini_picture_labels_enabled, picture_match_label
 from app.services.vlm_service import (
-    enrich_picture_match_labels,
     heuristic_short_label_from_description,
     is_junk_label,
     is_placeholder_description,
     short_label_for_image,
     short_label_for_image_lowmem,
+    vision_quota_tripped,
 )
 from app.core.config import settings
 
@@ -35,18 +40,45 @@ PDF_ONLY_RULES = (
     "Do NOT use general knowledge outside the excerpt."
 )
 
-STANDALONE_PAPER_RULES = (
-    "The student sees ONLY the question on the paper — no textbook excerpt, passage, or reading block. "
-    "Never write 'provided text', 'the passage', 'the excerpt', 'above text', or 'following text'. "
-    "Ask directly (e.g. 'Which of the following is a Popular Indian?' not 'mentioned in the provided text')."
+HINDI_RULES = (
+    "Write question text, options, and answers in Hindi (Devanagari). "
+    "Keep names as they appear in the lesson."
 )
 
-_PASSAGE_PHRASE_RE = re.compile(
-    r"provided text|the passage|reading passage|above text|following text|given text|"
-    r"in the text|from the text|according to the (?:passage|text|excerpt)|"
-    r"as (?:mentioned|stated|described) in",
-    re.I,
+CHAPTER_BALANCE_RULES = (
+    "Cover ALL selected chapters roughly equally. "
+    "Do NOT focus most questions on a single chapter or story. "
+    "Spread facts, characters, and vocabulary across every chapter listed in CHAPTER SCOPE."
 )
+
+CROSS_FORMAT_RULES = (
+    "This item is ONE section of a multi-section exam. "
+    "Do NOT repeat the same fact or sentence wording used in other sections "
+    "(MCQ vs fill-in-blank vs word-match vs short answer must cover different points or phrasing)."
+)
+
+_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+
+
+def _is_hindi_subject(subject_name: str) -> bool:
+    name = subject_name or ""
+    return "hindi" in name.lower() or bool(_DEVANAGARI_RE.search(name))
+
+
+def _label_needs_hindi(label: str) -> bool:
+    """True when a picture-match label is English-only and should be replaced."""
+    s = (label or "").strip()
+    if not s:
+        return True
+    if _DEVANAGARI_RE.search(s):
+        return False
+    return bool(re.search(r"[A-Za-z]{3,}", s))
+
+
+def _lang_rules(subject_name: str) -> str:
+    if _is_hindi_subject(subject_name):
+        return HINDI_RULES
+    return ""
 
 ProgressCallback = Callable[[int, str], Awaitable[None]]
 
@@ -226,28 +258,146 @@ def _allocate_picture_pool(images: list[dict]) -> list[dict]:
     return pool
 
 
+def _allocate_picture_pool_balanced(
+    images: list[dict],
+    chapter_ranges: list[tuple[int, int]] | None,
+) -> list[dict]:
+    """Round-robin across selected chapter page ranges so one lesson cannot dominate."""
+    if not chapter_ranges or len(chapter_ranges) < 2:
+        return _allocate_picture_pool(images)
+
+    buckets: list[list[dict]] = [[] for _ in chapter_ranges]
+    unassigned: list[dict] = []
+    for img in images:
+        page = img.get("page_number")
+        placed = False
+        if page:
+            for i, (start, end) in enumerate(chapter_ranges):
+                if start <= page <= end:
+                    buckets[i].append(img)
+                    placed = True
+                    break
+        if not placed:
+            unassigned.append(img)
+
+    for bucket in buckets:
+        random.shuffle(bucket)
+    random.shuffle(unassigned)
+
+    pool: list[dict] = []
+    cursors = [0] * len(buckets)
+    while True:
+        added = False
+        for i, bucket in enumerate(buckets):
+            if cursors[i] < len(bucket):
+                pool.append(bucket[cursors[i]])
+                cursors[i] += 1
+                added = True
+        if not added:
+            break
+    pool.extend(unassigned)
+    return pool
+
+
+def _context_for_quality_scoring(source_context: str) -> str:
+    """Strip cross-section hints we append for the LLM — not part of the textbook."""
+    marker = "---\nQuestions already used in OTHER sections"
+    if marker in source_context:
+        return source_context.split(marker, 1)[0]
+    return source_context
+
+
 def question_contains_meta_terms(question_data: dict, source_context: str) -> bool:
     """Reject infrastructure/meta questions unless those terms appear in the source PDF text."""
-    text_blob = json.dumps(question_data).lower()
-    source_lower = source_context.lower()
+    source_lower = _context_for_quality_scoring(source_context).lower()
+    skip_keys = frozenset(
+        {
+            "grading_rubric",
+            "ideal_answer",
+            "correct_answer",
+            "correct_word",
+            "correct_mapping",
+            "correct_label_by_figure",
+            "correct_mapping_keys",
+            "correct_option_code",
+            "is_true",
+        }
+    )
+    check_payload = {k: v for k, v in question_data.items() if k not in skip_keys}
+    text_blob = json.dumps(check_payload, ensure_ascii=False).lower()
     for term in META_TERMS:
         if term in text_blob and term not in source_lower:
             return True
-    if "context" in text_blob and "context" not in source_lower:
-        return True
     return False
 
 
-def sample_chunk_context(chunks: list, batch_index: int, batch_size: int | None = None) -> str:
-    """Pick a random rotating slice so each generation run sees different textbook pages."""
+def sample_chunk_context(
+    chunks: list,
+    batch_index: int,
+    batch_size: int | None = None,
+    chapter_ranges: list[tuple[int, int]] | None = None,
+) -> str:
+    """Disjoint slices per format; when chapters are selected, sample each chapter equally."""
     if not chunks:
         return ""
     batch_size = batch_size or settings.CHUNKS_PER_GENERATION_BATCH
+
+    if chapter_ranges and len(chapter_ranges) > 1:
+        per = max(1, batch_size // len(chapter_ranges))
+        selected: list = []
+        for start, end in chapter_ranges:
+            ch_chunks = [
+                c
+                for c in chunks
+                if c.page_number and start <= c.page_number <= end and c.content
+            ]
+            if not ch_chunks:
+                continue
+            offset = (batch_index * per) % len(ch_chunks)
+            for i in range(min(per, len(ch_chunks))):
+                selected.append(ch_chunks[(offset + i) % len(ch_chunks)])
+        if selected:
+            # Keep chapter order stable for the LLM, but rotate start by batch.
+            return "\n\n".join(
+                f"[PDF PAGE {c.page_number}]\n{c.content}" for c in selected
+            )
+
     n = len(chunks)
-    step = max(1, n // batch_size)
-    start = (batch_index * 4 + random.randint(0, n - 1)) % n
-    selected = [chunks[(start + i * step) % n] for i in range(min(batch_size, n))]
-    return "\n\n".join(c.content for c in selected)
+    if n <= batch_size:
+        return "\n\n".join(f"[PDF PAGE {c.page_number}]\n{c.content}" for c in chunks if c.content)
+    window = max(1, n // max(8, batch_size))
+    start = (batch_index * window) % n
+    selected = [chunks[(start + i) % n] for i in range(min(batch_size, n))]
+    return "\n\n".join(f"[PDF PAGE {c.page_number}]\n{c.content}" for c in selected if c.content)
+
+
+def _append_avoid_block(context: str, avoid_stems: list[str]) -> str:
+    if not avoid_stems:
+        return context
+    recent = avoid_stems[-35:]
+    block = "\n".join(f"- {s}" for s in recent if s.strip())
+    return (
+        f"{context}\n\n---\n"
+        "Questions already used in OTHER sections of this same test (do NOT duplicate):\n"
+        f"{block}"
+    )
+
+
+def _stem_for_avoid(q: dict) -> str:
+    data = q.get("data") or {}
+    t = q.get("type")
+    if t == "mcq":
+        return (data.get("question_text") or "").strip()[:140]
+    if t == "fill_blank":
+        return (data.get("sentence_with_blank") or "").strip()[:140]
+    if t == "word_match":
+        col = data.get("column_a") or []
+        return "; ".join(str(x) for x in col[:3])[:140]
+    if t in ("short_answer", "answer_following", "oral"):
+        return (data.get("question") or "").strip()[:140]
+    if t == "true_false":
+        return (data.get("statement") or "").strip()[:140]
+    return ""
 
 
 def heuristic_quality_score(q_data: dict, context: str) -> float:
@@ -266,43 +416,25 @@ def heuristic_quality_score(q_data: dict, context: str) -> float:
     return 0.88
 
 
-def _mcq_references_unshown_passage(q_data: dict) -> bool:
-    text = (q_data.get("question_text") or "").strip()
-    return bool(text and _PASSAGE_PHRASE_RE.search(text))
-
-
 async def generate_mcqs(
     context: str, count: int, subject_name: str, chapter_scope: str | None = None
 ) -> list[dict]:
-    questions: list[dict] = []
-    ask = max(count, count + 3)
-    for attempt in range(2):
-        if len(questions) >= count:
-            break
-        need = ask if attempt == 0 else count + (count - len(questions))
-        prompt = (
-            f"Generate EXACTLY {need} multiple choice questions for {subject_name}. "
-            f"{PDF_ONLY_RULES} {STANDALONE_PAPER_RULES} Ensure distractors are plausible."
-        )
-        data = await generate_structured_output(
-            prompt, MCQListSchema, context, subject_name, chapter_scope
-        )
-        if "questions" not in data:
-            if data.get("error"):
-                logger.error("MCQ generation failed: %s", data.get("error"))
-            continue
+    prompt = (
+        f"Generate EXACTLY {count} multiple choice questions for {subject_name}. "
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} {_lang_rules(subject_name)} "
+        "Ensure distractors are plausible."
+    )
+    data = await generate_structured_output(
+        prompt, MCQListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
         for q_data in data["questions"]:
-            if len(questions) >= count:
-                break
-            if _mcq_references_unshown_passage(q_data):
-                logger.info(
-                    "Dropped MCQ referencing unseen passage: %s",
-                    (q_data.get("question_text") or "")[:80],
-                )
-                continue
             score = heuristic_quality_score(q_data, context)
             questions.append({"type": "mcq", "data": q_data, "score": score, "marks": 1})
-    return questions[:count]
+    elif data.get("error"):
+        logger.error("MCQ generation failed: %s", data.get("error"))
+    return questions
 
 
 async def generate_assertion_reason(
@@ -352,38 +484,141 @@ def _dedupe_labels(labels: list[str]) -> list[str]:
 
 
 def runtime_vision_enabled() -> bool:
-    """Gemini vision + full image bytes can OOM on small hosts during picture-match."""
+    """Gemini Vision for picture labels — independent of text LLM (Groq/OpenAI).
+
+    Disabled on Render by default (512MB OOM risk). Override with
+    SKIP_RUNTIME_VLM=0 / ALLOW_RUNTIME_VLM_ON_RENDER=1.
+    """
+    if vision_quota_tripped():
+        return False
     if os.getenv("SKIP_RUNTIME_VLM") == "1":
         return False
     if os.getenv("SKIP_RUNTIME_VLM") == "0":
         return True
-    return not os.getenv("RENDER")
+    if os.getenv("RENDER") and os.getenv("ALLOW_RUNTIME_VLM_ON_RENDER") != "1":
+        return False
+    return bool(settings.GEMINI_API_KEY)
 
 
-def _filename_hint(img: dict) -> str:
-    path = img.get("image_path") or ""
-    stem = os.path.splitext(os.path.basename(path))[0]
-    stem = re.sub(r"^PDF\d+_P\d+_IMG\d+", "Figure", stem, flags=re.I)
-    return stem.replace("_", " ").strip() or "Figure"
+async def _translate_label_to_hindi(english: str) -> str:
+    """Cheap Groq text translation when Gemini Vision quota is exhausted."""
+    text = (english or "").strip()
+    if not text or not settings.GROQ_API_KEY:
+        return ""
+    if _DEVANAGARI_RE.search(text):
+        return text
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        model = settings.LLM_MODEL if "qwen" in (settings.LLM_MODEL or "").lower() else "qwen/qwen3.8-27b"
+        if (settings.LLM_PROVIDER or "").lower() != "groq":
+            model = "qwen/qwen3.8-27b"
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Translate the picture label into short Hindi Devanagari (2-5 words). "
+                        "Reply with ONLY the Hindi label — no English, no quotes, no explanation."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0.1,
+            max_tokens=40,
+        )
+        out = (resp.choices[0].message.content or "").strip().strip('"').strip("'")
+        out = out.split("\n")[0].strip()
+        if out and _DEVANAGARI_RE.search(out) and not is_junk_label(out):
+            return out[:60]
+    except Exception as e:
+        logger.warning("Hindi label translate failed for %r: %s", text[:40], e)
+    return ""
 
 
-async def _labels_for_images(selected: list[dict]) -> list[str]:
-    """Proper names from the photo — never filenames or 'man in glasses'."""
+async def _resolve_picture_label(img: dict, *, prefer_hindi: bool = False) -> str:
+    """Student-facing label from OCR on the figure, not seeded OCR-failure placeholders."""
+    desc = (img.get("description") or img.get("caption") or "").strip()
+    label = ""
+    path = img.get("image_path")
+    english_seed = ""
+
+    use_seeded = bool(desc) and not is_junk_label(desc) and not desc.startswith("[OCR:")
+    use_seeded = use_seeded and "manual import" not in desc.lower()
+
+    if use_seeded:
+        if prefer_hindi and not _DEVANAGARI_RE.search(desc):
+            english_seed = desc
+            use_seeded = False
+        else:
+            label = heuristic_short_label_from_description(desc)
+            if not label and len(desc.split()) <= 8:
+                from app.services.vlm_service import normalize_short_label
+
+                label = normalize_short_label(desc)
+            if prefer_hindi and label and _label_needs_hindi(label):
+                english_seed = label
+                label = ""
+
+    if (not label or is_junk_label(label)) and path and os.path.isfile(path):
+        label = await picture_match_label(path)
+        if prefer_hindi and label and _label_needs_hindi(label):
+            if not english_seed:
+                english_seed = label
+            label = ""
+
+    # Prefer Groq translate of known English caption over burning Gemini Vision quota.
+    if prefer_hindi and (not label or is_junk_label(label)) and english_seed:
+        translated = await _translate_label_to_hindi(english_seed)
+        if translated:
+            return translated
+
+    if (not label or is_junk_label(label)) and path and os.path.isfile(path):
+        if runtime_vision_enabled():
+            if gemini_picture_labels_enabled():
+                label = await short_label_for_image(path, hindi_only=prefer_hindi)
+            elif settings.GEMINI_API_KEY:
+                label = await short_label_for_image_lowmem(path, hindi_only=prefer_hindi)
+
+    if not label or is_junk_label(label):
+        # Last resort: use English seed translated, or skip
+        if prefer_hindi and english_seed:
+            translated = await _translate_label_to_hindi(english_seed)
+            if translated:
+                return translated
+        return ""
+    if prefer_hindi and _label_needs_hindi(label):
+        translated = await _translate_label_to_hindi(label)
+        return translated or ""
+    return label
+
+
+async def count_labeled_figures(
+    images: list[dict],
+    *,
+    max_probe: int = 48,
+    tier: str = "relaxed",
+    prefer_hindi: bool = False,
+) -> int:
+    """How many chapter figures get a student-facing label (OCR or runtime vision)."""
+    pool = filter_quality_images(images, tier=tier)
+    labeled = 0
+    for img in pool[:max_probe]:
+        if await _resolve_picture_label(img, prefer_hindi=prefer_hindi):
+            labeled += 1
+    return labeled
+
+
+async def _labels_for_images(selected: list[dict], *, prefer_hindi: bool = False) -> list[str]:
     labels: list[str] = []
     for img in selected:
-        path = img.get("image_path")
-        label = ""
-        if path and os.path.isfile(path):
-            if runtime_vision_enabled():
-                label = await short_label_for_image(path)
-            if not label or is_junk_label(label):
-                label = await short_label_for_image_lowmem(path)
-        if not label or is_junk_label(label):
-            desc = (img.get("description") or img.get("caption") or "").strip()
-            label = heuristic_short_label_from_description(desc)
-        labels.append(label or "")
-    labels = await enrich_picture_match_labels(labels, selected)
-    return _dedupe_labels(labels)
+        labels.append(await _resolve_picture_label(img, prefer_hindi=prefer_hindi))
+    return _dedupe_labels([l for l in labels if l and not is_junk_label(l)])
 
 
 def _finalize_picture_match(
@@ -415,11 +650,14 @@ async def _generate_picture_match_from_images(
     subject_name: str,
     context: str,
     used_image_ids: set[int] | None = None,
+    chapter_ranges: list[tuple[int, int]] | None = None,
 ) -> list[dict]:
     """Build picture-match questions — one exercise uses 5 unique images."""
     questions: list[dict] = []
     pairs = MATCH_PAIRS_PER_QUESTION
-    pool = _allocate_picture_pool(images)
+    prefer_hindi = _is_hindi_subject(subject_name)
+    # Round-robin across chapters; do not re-sort by page (that re-clusters one lesson).
+    pool = _allocate_picture_pool_balanced(images, chapter_ranges)
     cursor = 0
 
     if len(pool) < pairs:
@@ -427,16 +665,25 @@ async def _generate_picture_match_from_images(
 
     for q_idx in range(count):
         selected: list[dict] = []
-        while len(selected) < pairs and cursor < len(pool):
+        labels: list[str] = []
+        # When Vision quota is dead we rely on OCR/Groq translate — don't probe forever.
+        max_probes = min(len(pool), 12 if vision_quota_tripped() else max(15, len(pool)))
+        probes = 0
+        while len(selected) < pairs and cursor < len(pool) and probes < max_probes:
             candidate = pool[cursor]
             cursor += 1
-            if candidate in selected:
+            probes += 1
+            if any(candidate.get("id") == s.get("id") for s in selected):
+                continue
+            label = await _resolve_picture_label(candidate, prefer_hindi=prefer_hindi)
+            if not label:
                 continue
             selected.append(candidate)
+            labels.append(label)
 
         if len(selected) < pairs:
             logger.warning(
-                "Picture match: need %d images, only found %d at question %d/%d",
+                "Picture match: need %d labeled figures, only found %d at question %d/%d",
                 pairs,
                 len(selected),
                 q_idx + 1,
@@ -444,7 +691,7 @@ async def _generate_picture_match_from_images(
             )
             break
 
-        labels = await _labels_for_images(selected)
+        labels = _dedupe_labels(labels[:pairs])
         if len(labels) < pairs:
             continue
 
@@ -477,7 +724,7 @@ async def generate_word_match(
         f"Each question must have exactly {MATCH_PAIRS_PER_QUESTION} items in column_a and "
         f"{MATCH_PAIRS_PER_QUESTION} related items in column_b. "
         f"correct_mapping must map each column_a item text to its matching column_b item text. "
-        f"{PDF_ONLY_RULES}"
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} {_lang_rules(subject_name)}"
     )
     data = await generate_structured_output(
         prompt, WordMatchListSchema, context, subject_name, chapter_scope
@@ -535,6 +782,7 @@ async def generate_picture_match(
     images: list[dict],
     chapter_scope: str | None = None,
     used_image_ids: set[int] | None = None,
+    chapter_ranges: list[tuple[int, int]] | None = None,
 ) -> list[dict]:
     pairs = MATCH_PAIRS_PER_QUESTION
     used: set[int] = set(used_image_ids or ())
@@ -558,6 +806,7 @@ async def generate_picture_match(
             subject_name,
             context,
             used,
+            chapter_ranges=chapter_ranges,
         )
         questions.extend(batch)
         logger.info(
@@ -570,18 +819,16 @@ async def generate_picture_match(
         if len(questions) >= count:
             return questions[:count]
 
-    remaining = count - len(questions)
-    if remaining > 0:
+    # Caption-only inventions are not pictures from the selected textbook pages.
+    if len(questions) < count:
         logger.warning(
-            "Picture match: only %d/%d from images — LLM fallback for %d",
+            "Picture match: only %d/%d questions — need %d labeled textbook images "
+            "in the selected chapter pages. Skipping remaining picture-match items.",
             len(questions),
             count,
-            remaining,
+            pairs,
         )
-        llm_batch = await _generate_picture_match_llm(
-            context, remaining, subject_name, chapter_scope
-        )
-        questions.extend(llm_batch[:remaining])
+        return questions
 
     logger.info("Picture match: %d questions ready", len(questions[:count]))
     return questions[:count]
@@ -612,7 +859,8 @@ async def generate_fill_blank(
 ) -> list[dict]:
     prompt = (
         f"Generate EXACTLY {count} fill-in-the-blank sentences for {subject_name}. "
-        f"{PDF_ONLY_RULES} Use key facts from the excerpt."
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} "
+        "Use different sentences than MCQ stems; blank one key word per sentence."
     )
     data = await generate_structured_output(
         prompt, FillInBlankListSchema, context, subject_name, chapter_scope
@@ -633,7 +881,8 @@ async def generate_short_answer(
     prompt = (
         f"Generate EXACTLY {count} short subjective questions for {subject_name}. "
         f"These questions require a brief typed answer from the student. "
-        f"{PDF_ONLY_RULES} Provide an ideal detailed answer and a grading rubric."
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} "
+        "Provide an ideal detailed answer and a grading rubric."
     )
     data = await generate_structured_output(
         prompt, ShortAnswerListSchema, context, subject_name, chapter_scope
@@ -648,6 +897,89 @@ async def generate_short_answer(
     return questions
 
 
+async def generate_oral(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} मौखिक प्रश्न (oral questions) for {subject_name}. "
+        f"{PDF_ONLY_RULES} {HINDI_RULES} "
+        "These are asked aloud in class; answers should be short spoken replies from the lesson."
+    )
+    data = await generate_structured_output(
+        prompt, OralListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "oral", "data": q_data, "score": score, "marks": 2})
+    elif data.get("error"):
+        logger.error("Oral generation failed: %s", data.get("error"))
+    return questions
+
+
+async def generate_who_said(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} 'किसने किससे कहा?' questions for {subject_name}. "
+        f"{PDF_ONLY_RULES} {HINDI_RULES} "
+        "Each item is a dialogue or line from the lesson with speaker and listener."
+    )
+    data = await generate_structured_output(
+        prompt, WhoSaidListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "who_said", "data": q_data, "score": score, "marks": 2})
+    elif data.get("error"):
+        logger.error("Who-said generation failed: %s", data.get("error"))
+    return questions
+
+
+async def generate_answer_following(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} 'निम्नलिखित प्रश्नों के उत्तर दीजिए' questions for {subject_name}. "
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} {HINDI_RULES} "
+        "Short written answers from the lesson. Provide ideal_answer and a grading rubric."
+    )
+    data = await generate_structured_output(
+        prompt, ShortAnswerListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "answer_following", "data": q_data, "score": score, "marks": 2})
+    elif data.get("error"):
+        logger.error("Answer-following generation failed: %s", data.get("error"))
+    return questions
+
+
+async def generate_creative(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} रचनात्मक कार्य (creative work) tasks for {subject_name}. "
+        f"{PDF_ONLY_RULES} {HINDI_RULES} "
+        "Drawing, few sentences, or a short poem tied to the lesson — not generic art prompts."
+    )
+    data = await generate_structured_output(
+        prompt, CreativeWorkListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "creative", "data": q_data, "score": score, "marks": 3})
+    elif data.get("error"):
+        logger.error("Creative generation failed: %s", data.get("error"))
+    return questions
+
 
 VALID_QUESTION_TYPES = frozenset({
     "mcq",
@@ -657,6 +989,10 @@ VALID_QUESTION_TYPES = frozenset({
     "word_match",
     "picture_match",
     "short_answer",
+    "oral",
+    "who_said",
+    "answer_following",
+    "creative",
 })
 
 DEFAULT_TYPE_COUNTS: dict[str, int] = {
@@ -667,6 +1003,10 @@ DEFAULT_TYPE_COUNTS: dict[str, int] = {
     "true_false": 10,
     "fill_blank": 10,
     "short_answer": 5,
+    "oral": 10,
+    "who_said": 10,
+    "answer_following": 10,
+    "creative": 5,
 }
 
 
@@ -678,10 +1018,11 @@ async def generate_all_types(
     include_types: list[str] | None = None,
     questions_per_type: int = 5,
     chapter_scope: str | None = None,
+    chapter_ranges: list[tuple[int, int]] | None = None,
 ) -> list[dict]:
     """
     Generate exactly `questions_per_type` questions for each selected format.
-    Each format uses a different random textbook slice for variety across runs.
+    Each format uses a different textbook slice; selected chapters are sampled evenly.
     """
     all_generators: list[tuple] = [
         ("MCQs", generate_mcqs, "mcq", 0),
@@ -691,6 +1032,10 @@ async def generate_all_types(
         ("True/False", generate_true_false, "true_false", 4),
         ("Fill in the Blank", generate_fill_blank, "fill_blank", 5),
         ("Short Answer", generate_short_answer, "short_answer", 6),
+        ("Oral", generate_oral, "oral", 7),
+        ("Who Said", generate_who_said, "who_said", 8),
+        ("Answer Following", generate_answer_following, "answer_following", 9),
+        ("Creative", generate_creative, "creative", 10),
     ]
 
     if include_types:
@@ -699,12 +1044,22 @@ async def generate_all_types(
     else:
         generators = all_generators
 
+    if os.getenv("LOW_MEMORY") == "1" and any(g[2] == "picture_match" for g in generators):
+        generators.sort(key=lambda g: (0 if g[2] == "picture_match" else 1, g[3]))
+
     if not generators:
         return []
+
+    balance_extra = ""
+    if chapter_ranges and len(chapter_ranges) > 1:
+        balance_extra = f" {CHAPTER_BALANCE_RULES}"
+        if chapter_scope:
+            chapter_scope = f"{chapter_scope}\n{CHAPTER_BALANCE_RULES}"
 
     all_questions: list[dict] = []
     total = len(generators)
     used_image_ids: set[int] = set()
+    avoid_stems: list[str] = []
 
     for i, entry in enumerate(generators):
         label, gen_fn, q_type, batch_idx = entry
@@ -712,7 +1067,12 @@ async def generate_all_types(
             pct = 32 + int((i / total) * 46)
             await on_progress(pct, f"Generating {label} from textbook ({i + 1}/{total})")
 
-        context = sample_chunk_context(chunks, batch_idx + random.randint(0, 3))
+        context = _append_avoid_block(
+            sample_chunk_context(
+                chunks, batch_idx, chapter_ranges=chapter_ranges
+            ),
+            avoid_stems,
+        )
         keep = quota_for_type(q_type, questions_per_type)
         if gen_fn is generate_picture_match:
             result = await gen_fn(
@@ -722,15 +1082,24 @@ async def generate_all_types(
                 image_metadata,
                 chapter_scope,
                 used_image_ids,
+                chapter_ranges=chapter_ranges,
             )
             picked = result[:keep]
         else:
-            extra = 0 if q_type in MATCH_FORMAT_TYPES else 2
+            extra = 0
             result = await gen_fn(context, keep + extra, subject_name, chapter_scope)
             result.sort(key=lambda q: q.get("score", 0), reverse=True)
             picked = result[:keep]
 
         all_questions.extend(picked)
-        logger.info("%s: generated %d, kept %d", label, len(result), len(picked))
+        for q in picked:
+            stem = _stem_for_avoid(q)
+            if stem:
+                avoid_stems.append(stem)
+        logger.info("%s: generated %d, kept %d%s", label, len(result), len(picked), balance_extra and " [balanced]")
+        del result
+        del picked
+        del context
+        gc.collect()
 
     return all_questions

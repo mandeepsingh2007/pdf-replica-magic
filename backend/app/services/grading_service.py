@@ -26,6 +26,10 @@ SECTION_KEYS = [
     ("section_C_Objective", "C"),
     ("section_D_MatchFollowing", "D"),
     ("section_D_Subjective", "D"),  # legacy tests
+    ("section_oral", "O"),
+    ("section_who_said", "W"),
+    ("section_answer_following", "F"),
+    ("section_creative", "R"),
 ]
 
 STOPWORDS = frozenset({
@@ -202,8 +206,14 @@ def strip_answer_keys(question: dict) -> dict:
         base["display"] = {"sentence_with_blank": q_data.get("sentence_with_blank", "")}
     elif q_type in ("word_match", "picture_match"):
         base["display"] = _build_match_display(q_data, q_type, q_id or 0)
-    elif q_type in ("short_answer", "long_answer"):
+    elif q_type in ("short_answer", "long_answer", "answer_following"):
         base["display"] = {"question": q_data.get("question", "")}
+    elif q_type == "oral":
+        base["display"] = {"question": q_data.get("question", "")}
+    elif q_type == "who_said":
+        base["display"] = {"quote": q_data.get("quote", "")}
+    elif q_type == "creative":
+        base["display"] = {"prompt": q_data.get("prompt", "")}
     else:
         base["display"] = q_data
 
@@ -377,7 +387,13 @@ def format_paper_answer(question: dict) -> str:
             lines.append(f"({left_key}) → ({right_key}) {right.get(right_key, '')}")
         return "\n".join(lines)
 
-    if q_type in ("short_answer", "long_answer"):
+    if q_type in ("short_answer", "long_answer", "answer_following", "oral"):
+        return q_data.get("ideal_answer") or ""
+    if q_type == "who_said":
+        speaker = q_data.get("speaker") or ""
+        listener = q_data.get("listener") or ""
+        return f"{speaker} → {listener}".strip(" →")
+    if q_type == "creative":
         return q_data.get("ideal_answer") or ""
     return ""
 
@@ -413,7 +429,13 @@ def format_correct_answer(
             if 0 <= b_idx < len(labels):
                 parts.append(f"Figure {fig_key} → {labels[b_idx]}")
         return "; ".join(parts)
-    if q_type in ("short_answer", "long_answer"):
+    if q_type in ("short_answer", "long_answer", "answer_following", "oral"):
+        return q_data.get("ideal_answer", "")
+    if q_type == "who_said":
+        speaker = q_data.get("speaker") or ""
+        listener = q_data.get("listener") or ""
+        return f"{speaker} → {listener}".strip(" →")
+    if q_type == "creative":
         return q_data.get("ideal_answer", "")
     return ""
 
@@ -491,6 +513,20 @@ def grade_objective(
             )
         return marks_awarded, is_correct, feedback
 
+    if q_type == "who_said":
+        expected = normalize_text(
+            f"{q_data.get('speaker', '')} {q_data.get('listener', '')}"
+        )
+        user = normalize_text(str(user_answer))
+        speaker = normalize_text(q_data.get("speaker") or "")
+        is_correct = bool(speaker and speaker in user) or (expected and expected == user)
+        feedback = (
+            "Correct!"
+            if is_correct
+            else f"सही उत्तर: {q_data.get('speaker', '')} → {q_data.get('listener', '')}"
+        )
+        return (max_marks if is_correct else 0), is_correct, feedback
+
     return 0, False, "Unknown question type."
 
 
@@ -547,7 +583,7 @@ async def grade_test(
         user_answer = answers.get(q_id)
         correct_answer = format_correct_answer(q_type, q_data, q.get("id"))
 
-        if q_type in ("short_answer", "long_answer"):
+        if q_type in ("short_answer", "long_answer", "oral", "answer_following", "creative"):
             user_text = str(user_answer or "")
             heuristic = heuristic_short_answer_score(user_text, q_data, max_marks)
             if heuristic:

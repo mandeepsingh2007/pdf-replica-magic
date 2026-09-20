@@ -15,7 +15,10 @@ def layout_aware_chunking(text_blocks: List[Dict]) -> List[Dict]:
         page = block["page"]
         text = block["text"]
         
-        if len(current_chunk) + len(text) > 1000:
+        if not text.strip():
+            continue
+        # A page number must describe every character in its chunk.
+        if current_chunk and (page != current_page or len(current_chunk) + len(text) > 1000):
             chunks.append({
                 "content": current_chunk.strip(),
                 "chunk_type": "text",
@@ -25,6 +28,8 @@ def layout_aware_chunking(text_blocks: List[Dict]) -> List[Dict]:
             current_chunk = text + "\n"
             current_page = page
         else:
+            if not current_chunk:
+                current_page = page
             current_chunk += text + "\n"
             
     if current_chunk.strip():

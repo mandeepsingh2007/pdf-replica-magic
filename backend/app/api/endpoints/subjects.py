@@ -14,11 +14,16 @@ from app.services.chapter_service import extract_chapters
 router = APIRouter()
 
 @router.get("", response_model=List[SubjectResponse])
-async def list_subjects(db: AsyncSession = Depends(get_db)):
-    """List all active subjects."""
+async def list_subjects(track: str | None = None, db: AsyncSession = Depends(get_db)):
+    """List active subjects. track=hindi | english filters Pathmala vs Semester Book."""
     ensure_orm_loaded()
-    result = await db.execute(select(Subject).where(Subject.is_active == True))
+    query = select(Subject).where(Subject.is_active == True)
+    result = await db.execute(query)
     subjects = result.scalars().all()
+    if track == "hindi":
+        subjects = [s for s in subjects if (s.name or "").lower().startswith("hindi")]
+    elif track == "english":
+        subjects = [s for s in subjects if not (s.name or "").lower().startswith("hindi")]
     return subjects
 
 @router.get("/{subject_id}", response_model=SubjectResponse)
@@ -57,10 +62,14 @@ async def list_subject_chapters(subject_id: int, db: AsyncSession = Depends(get_
     if not chunks:
         raise HTTPException(
             status_code=400,
-            detail="Textbook not ingested yet. Run: python seed_pdfs.py --force",
+            detail=(
+                "Textbook not ingested yet. "
+                "For Hindi Pathmala run: python seed_hindi_text_and_images.py --only Hindi-N --ocr. "
+                "For Semester books run: python seed_pdfs.py --force"
+            ),
         )
 
-    chapters = extract_chapters(chunks)
+    chapters = extract_chapters(chunks, subject_name=subject.name)
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found in textbook PDF")
 

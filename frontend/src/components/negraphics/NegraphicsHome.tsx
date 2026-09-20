@@ -40,6 +40,7 @@ export function NegraphicsHome() {
   const [currentGaloreRightSlide, setCurrentGaloreRightSlide] = useState(0);
 
   const openSemesterPortal = () => router.push("/semester");
+  const openHindiPortal = () => router.push("/hindi");
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
@@ -102,6 +103,41 @@ export function NegraphicsHome() {
                     transform: isLg
                       ? "scale(2.5) translateX(-110px)"
                       : "scale(1.6) translateX(-60px)",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="hindi-pathmala-portal"
+          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 lg:mb-16"
+        >
+          <div className="border-2 lg:border-4 ng-border-primary">
+            <div className="ng-bg-primary ng-text-primary-fg py-6 lg:py-8 px-4 lg:px-8 flex flex-col lg:flex-row items-center justify-between">
+              <div className="flex-1 order-2 lg:order-1">
+                <h2 className="text-2xl lg:text-4xl font-bold mb-2 lg:mb-4">Hindi Pathmala</h2>
+                <h2 className="text-2xl lg:text-4xl font-bold mb-4 lg:mb-6">Digital Contents</h2>
+                <p className="mb-3 lg:mb-4 max-w-2xl text-sm lg:text-base">
+                  हिंदी पाठमाला की ई-पुस्तक, वीडियो पाठ, और टेस्ट जनरेटर — बच्चों के लिए सरल और
+                  रंगीन डिजिटल सामग्री।
+                </p>
+                <p className="mb-6 lg:mb-8 max-w-2xl text-sm lg:text-base">
+                  Teachers can open the Hindi portal to create chapter-wise question papers from
+                  Pathmala textbooks.
+                </p>
+                <CTAButton onClick={openHindiPortal}>OPEN PORTAL</CTAButton>
+              </div>
+              <div className="flex-shrink-0 lg:ml-8 mb-6 lg:mb-0 order-1 lg:order-2">
+                <img
+                  src={coverBooks}
+                  alt="Hindi Pathmala digital portal"
+                  className="w-64 lg:w-96 h-auto"
+                  style={{
+                    transform: isLg
+                      ? "scale(2.2) translateX(-90px)"
+                      : "scale(1.5) translateX(-50px)",
                   }}
                 />
               </div>

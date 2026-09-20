@@ -31,6 +31,29 @@
   }
 }
 
+/* Hindi login: dark theme body sets near-white text — force readable input text */
+.hindi-login-input,
+.hindi-login-input:focus,
+.hindi-login-input:hover {
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+  caret-color: #0f172a !important;
+  background-color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.hindi-login-input:-webkit-autofill,
+.hindi-login-input:-webkit-autofill:hover,
+.hindi-login-input:-webkit-autofill:focus,
+.hindi-login-input:-webkit-autofill:active {
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+  caret-color: #0f172a !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  transition: background-color 99999s ease-out;
+}
+
 @layer utilities {
   .glassmorphism {
     background: rgba(24, 24, 27, 0.4);

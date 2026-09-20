@@ -1,6 +1,10 @@
 import uuid
 import json
 import os
+import asyncio
+import logging
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +38,19 @@ from app.services.test_pdf_service import build_answer_key_pdf, build_test_pdf
 
 router = APIRouter()
 
+
+def _pdf_content_disposition(filename: str) -> str:
+    """ASCII filename + RFC 5987 UTF-8 fallback — non-ASCII headers crash latin-1 ASGI."""
+    ascii_name = (
+        filename.encode("ascii", "ignore").decode("ascii").replace('"', "").strip()
+        or "test.pdf"
+    )
+    if not ascii_name.lower().endswith(".pdf"):
+        ascii_name = f"{ascii_name}.pdf"
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{quote(filename)}"
+    )
 
 async def validate_document_has_content(db: AsyncSession, document_id: int) -> None:
     result = await db.execute(
@@ -91,12 +108,27 @@ async def generate_test(
     await db.commit()
 
     from app.workers.test_generator_task import generate_test_async
+    from app.core.config import settings as _settings
 
     payload = request.model_dump()
     if request.include_types is not None:
         payload["include_types"] = [t for t in request.include_types if t in VALID_QUESTION_TYPES]
 
-    background_tasks.add_task(generate_test_async, payload, task_id)
+    async def _run_generation():
+        print(
+            f"=== GENERATION START {task_id} provider={_settings.LLM_PROVIDER} "
+            f"model={_settings.LLM_MODEL} ===",
+            flush=True,
+        )
+        try:
+            await generate_test_async(payload, task_id)
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Generation crashed")
+            print(f"=== GENERATION CRASH {task_id}: {exc} ===", flush=True)
+        else:
+            print(f"=== GENERATION END {task_id} ===", flush=True)
+
+    asyncio.create_task(_run_generation())
 
     return {"task_id": task_id, "message": "Test generation started in background"}
 
@@ -194,11 +226,11 @@ async def download_test_pdf(test_id: int, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
-    filename = f"test_{test_id}_{subject_name.replace(' ', '_')}.pdf"
+    filename = f"test_{test_id}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _pdf_content_disposition(filename)},
     )
 
 
@@ -215,11 +247,11 @@ async def download_answer_key_pdf(test_id: int, db: AsyncSession = Depends(get_d
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Answer key PDF failed: {e}")
 
-    filename = f"test_{test_id}_{subject_name.replace(' ', '_')}_answer_key.pdf"
+    filename = f"test_{test_id}_answer_key.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _pdf_content_disposition(filename)},
     )
 
 

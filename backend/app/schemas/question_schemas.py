@@ -63,5 +63,35 @@ class WordMatchListSchema(BaseModel):
 class PictureMatchListSchema(BaseModel):
     questions: List[PictureMatchSchema]
 
+class OralSchema(BaseModel):
+    question: str = Field(description="An oral question in Hindi to be asked aloud")
+    ideal_answer: str = Field(description="The expected spoken/written answer in Hindi")
+
+
+class WhoSaidSchema(BaseModel):
+    quote: str = Field(description="The exact or closely paraphrased line from the lesson")
+    speaker: str = Field(description="Who said the line")
+    listener: str = Field(description="To whom it was said; use 'स्वगत' if spoken to oneself")
+    explanation: str = Field(description="One-line context from the lesson")
+
+
+class CreativeWorkSchema(BaseModel):
+    prompt: str = Field(description="A creative writing/drawing task grounded in the lesson")
+    ideal_answer: str = Field(description="A model response a Class teacher would accept")
+    grading_rubric: List[str] = Field(description="Key points for awarding marks")
+
+
+class OralListSchema(BaseModel):
+    questions: List[OralSchema]
+
+
+class WhoSaidListSchema(BaseModel):
+    questions: List[WhoSaidSchema]
+
+
+class CreativeWorkListSchema(BaseModel):
+    questions: List[CreativeWorkSchema]
+
+
 class AssertionReasonListSchema(BaseModel):
     questions: List[AssertionReasonSchema]

@@ -51,6 +51,87 @@ CHAPTER_HASH_TITLE = re.compile(
     r"^#\s+([A-Z][^\n#]{4,80})\s*\n\n##\s+Learning Objective",
     re.MULTILINE,
 )
+# Hindi Pathmala: "पाठ 1 शीर्षक" / "पाठ १ : शीर्षक"
+HINDI_PATH_LINE = re.compile(
+    r"पाठ\s*([0-9०-९]+)\s*[:.\-–]?\s*(.+)",
+)
+_DEV_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+_HINDI_FOOTER = (
+    "पाठमाला",
+    "शिक्षण संकेत",
+    "लेखन अभ्यास",
+    "रे मिलकर",
+    "हिन्दी पाठमाला",
+)
+# Hindi Pathmala-1 (Grafalco): 14 chapters — PDF page where chapter badge appears.
+HINDI_1_CHAPTERS: list[tuple[int, str]] = [
+    (1, "मेरा नाम और जन्मदिन"),
+    (2, "प्यारा विद्यालय"),
+    (3, "मेरा परिवार"),
+    (4, "मेरा शरीर"),
+    (6, "ऋतु और महीने"),
+    (7, "हमारे राष्ट्रीय प्रतीक"),
+    (13, "स्वर और उनकी मात्राएँ"),
+    (53, "संयुक्त व्यंजन"),
+    (57, "संयुक्ताक्षर एवं द्वित्व व्यंजन"),
+    (61, "नुक्ता"),
+    (62, "अन्य वर्ण"),
+    (72, "चिड़िया के बच्चे"),
+    (75, "दीपू बदल गया"),
+    (79, "उँगलियों की लड़ाई"),
+]
+
+# Verified against the numbered lesson badges in Hindi Pathmala-1 Proof 2.
+# Standalone reading/activity pages between lessons are not part of that lesson.
+HINDI_1_END_PAGES = [1, 2, 3, 5, 6, 7, 52, 56, 60, 61, 64, 74, 77, 81]
+
+# Hindi Pathmala-2 (Grafalco): 13 numbered lessons — PDF page of chapter badge.
+# PDF has no text layer; pages are 1-based file pages (printed page = PDF + 7).
+HINDI_2_CHAPTERS: list[tuple[int, str]] = [
+    (1, "मेरी प्यारी माँ"),
+    (7, "नीमा की दादी"),
+    (14, "जंगल का डॉक्टर"),
+    (20, "समय का महत्व"),
+    (27, "सब्जी की टोकरी"),
+    (34, "खरगोश और कछुआ"),
+    (43, "आ गया वसंत"),
+    (50, "बादल"),
+    (57, "सच का इनाम"),
+    (63, "कंप्यूटर"),
+    (70, "सच्चे वीर"),
+    (76, "भाग्य या मेहनत"),
+    (83, "काली कोयल"),
+]
+
+# Page 42 ("स्वच्छता वीर", केवल पढ़ने के लिए) is excluded from lesson 6.
+HINDI_2_END_PAGES = [6, 13, 19, 26, 33, 41, 49, 56, 62, 69, 75, 82, 89]
+
+# Hindi Reader-3 (Grafalco): 14 numbered lessons — PDF page of chapter badge.
+# Scanned book (no text layer). Page 49 ("चाँद पर छोटा-सा गाँव", केवल पढ़ने के लिए)
+# sits between lessons 7 and 8 and is excluded from both.
+HINDI_3_CHAPTERS: list[tuple[int, str]] = [
+    (1, "जागो प्यारे"),
+    (7, "मोहन बना हीरो"),
+    (14, "छोटी चींटी, बड़ा काम"),
+    (20, "पेड़ों का उपहार"),
+    (25, "जादुई रंगों की दुनिया"),
+    (33, "सब्जियों की सभा"),
+    (42, "चमकीला आसमान"),
+    (50, "बाँसुरीवाले का न्याय"),
+    (58, "जंगल में इंटरनेट"),
+    (65, "प्यारे बोल"),
+    (71, "स्वच्छता ही सुंदरता है"),
+    (78, "जल चक्र का रहस्य"),
+    (85, "ज्ञान का खजाना"),
+    (91, "खो-खो का मुकाबला"),
+]
+
+HINDI_3_END_PAGES = [6, 13, 19, 24, 32, 41, 48, 57, 64, 70, 77, 84, 90, 97]
+
+
+def _int_loose(value: str) -> int:
+    return int(str(value).translate(_DEV_DIGITS))
 
 SKIP_TITLES = frozenset({
     "brain play",
@@ -156,6 +237,9 @@ def _parse_heading_chapters(chunks: list) -> list[ChapterInfo]:
         page = chunk.page_number or 1
 
         for num, title in CHAPTER_SINGLE_LINE.findall(content):
+            # "#2 पहचान..." is a lesson marker in Hindi books, not an English chapter heading.
+            if re.search(r"[\u0900-\u097F]", title):
+                continue
             add_if_unique(int(num), _clean_title(title), page)
 
         for num, title in CHAPTER_TWO_LINE.findall(content):
@@ -172,18 +256,120 @@ def _parse_heading_chapters(chunks: list) -> list[ChapterInfo]:
             pseudo_num = 200 + len(found)
             add_if_unique(pseudo_num, _clean_title(title), page, pseudo=True)
 
+        for line in content.splitlines():
+            m = HINDI_PATH_LINE.search(line)
+            if m:
+                add_if_unique(_int_loose(m.group(1)), _clean_title(m.group(2)), page)
+
     return sorted(found.values(), key=lambda c: (c.start_page, c.number))
 
 
-def extract_chapters(chunks: list) -> list[ChapterInfo]:
+def _hindi1_page_chapters(chunks: list) -> list[ChapterInfo]:
+    max_page = max((c.page_number or 1) for c in chunks)
+    out: list[ChapterInfo] = []
+    for i, (start, title) in enumerate(HINDI_1_CHAPTERS, start=1):
+        if start > max_page:
+            break
+        out.append(
+            ChapterInfo(
+                id=f"ch-h1-{i}",
+                number=i,
+                title=title,
+                start_page=start,
+                end_page=min(HINDI_1_END_PAGES[i - 1], max_page),
+            )
+        )
+    return out
+
+
+def _hindi2_page_chapters(chunks: list) -> list[ChapterInfo]:
+    max_page = max((c.page_number or 1) for c in chunks)
+    out: list[ChapterInfo] = []
+    for i, (start, title) in enumerate(HINDI_2_CHAPTERS, start=1):
+        if start > max_page:
+            break
+        out.append(
+            ChapterInfo(
+                id=f"ch-h2-{i}",
+                number=i,
+                title=title,
+                start_page=start,
+                end_page=min(HINDI_2_END_PAGES[i - 1], max_page),
+            )
+        )
+    return out
+
+
+def _hindi3_page_chapters(chunks: list) -> list[ChapterInfo]:
+    max_page = max((c.page_number or 1) for c in chunks)
+    out: list[ChapterInfo] = []
+    for i, (start, title) in enumerate(HINDI_3_CHAPTERS, start=1):
+        if start > max_page:
+            break
+        out.append(
+            ChapterInfo(
+                id=f"ch-h3-{i}",
+                number=i,
+                title=title,
+                start_page=start,
+                end_page=min(HINDI_3_END_PAGES[i - 1], max_page),
+            )
+        )
+    return out
+
+
+def _parse_hindi_section_starts(chunks: list) -> list[ChapterInfo]:
+    seen: set[str] = set()
+    chapters: list[ChapterInfo] = []
+    num = 0
+    for chunk in chunks:
+        page = chunk.page_number or 1
+        for line in (chunk.content or "").splitlines()[:12]:
+            raw = line.strip()
+            if not raw or len(raw) > 42:
+                continue
+            if any(m in raw for m in _HINDI_FOOTER):
+                continue
+            dev = sum(1 for c in raw if "\u0900" <= c <= "\u097F")
+            if dev < max(4, len(raw) // 3):
+                continue
+            title = _clean_title(re.sub(r"^[\W\d०-९#()\[\]«»]+", "", raw))
+            if len(title) < 4 or title.lower() in SKIP_TITLES:
+                continue
+            key = title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            num += 1
+            chapters.append(
+                ChapterInfo(
+                    id=f"ch-h-{num}",
+                    number=num,
+                    title=title,
+                    start_page=page,
+                )
+            )
+    return chapters
+
+
+def extract_chapters(chunks: list, *, subject_name: str | None = None) -> list[ChapterInfo]:
     if not chunks:
         return []
+
+    sub = (subject_name or "").lower()
+    if sub == "hindi-1":
+        return _hindi1_page_chapters(chunks)
+    if sub == "hindi-2":
+        return _hindi2_page_chapters(chunks)
+    if sub == "hindi-3":
+        return _hindi3_page_chapters(chunks)
 
     full_text = "\n\n".join(c.content for c in chunks if c.content)
     toc_md = _parse_toc(full_text)
     toc_plain = _parse_plain_toc(full_text)
     toc_chapters = toc_plain if len(toc_plain) >= len(toc_md) else toc_md
     heading_chapters = _parse_heading_chapters(chunks)
+    hindi_sections = _parse_hindi_section_starts(chunks)
 
     # Prefer TOC when it lists more chapters (Class 1 books use plain-text TOC)
     if len(toc_chapters) >= len(heading_chapters) and toc_chapters:
@@ -193,39 +379,52 @@ def extract_chapters(chunks: list) -> list[ChapterInfo]:
     else:
         chapters = toc_chapters
 
+    if sub == "hindi-1" and len(chapters) <= 2:
+        chapters = _hindi1_page_chapters(chunks)
+    elif sub == "hindi-2" and len(chapters) <= 2:
+        chapters = _hindi2_page_chapters(chunks)
+    elif sub == "hindi-3" and len(chapters) <= 2:
+        chapters = _hindi3_page_chapters(chunks)
+    elif sub.startswith("hindi") and len(chapters) <= 2 and len(hindi_sections) >= 3:
+        chapters = hindi_sections
+
     if not chapters:
         return []
 
-    chapters.sort(key=lambda c: c.start_page)
-    for i, ch in enumerate(chapters):
-        if i + 1 < len(chapters):
-            ch.end_page = max(ch.start_page, chapters[i + 1].start_page - 1)
-        else:
-            ch.end_page = max(c.page_number or 1 for c in chunks)
+    if not all(ch.end_page is not None for ch in chapters):
+        chapters.sort(key=lambda c: c.start_page)
+        for i, ch in enumerate(chapters):
+            if ch.end_page is not None:
+                continue
+            if i + 1 < len(chapters):
+                ch.end_page = max(ch.start_page, chapters[i + 1].start_page - 1)
+            else:
+                ch.end_page = max(c.page_number or 1 for c in chunks)
 
     return chapters
 
 
-def filter_chunks_by_chapters(chunks: list, chapter_ids: list[str] | None) -> list:
+def filter_chunks_by_chapters(
+    chunks: list,
+    chapter_ids: list[str] | None,
+    *,
+    subject_name: str | None = None,
+) -> list:
     if not chapter_ids:
         return chunks
 
-    chapters = extract_chapters(chunks)
+    chapters = extract_chapters(chunks, subject_name=subject_name)
     selected = [c for c in chapters if c.id in chapter_ids]
-    if not selected:
-        return chunks
+    unknown = set(chapter_ids) - {c.id for c in chapters}
+    if unknown:
+        raise ValueError("Unknown chapter selection: " + ", ".join(sorted(unknown)) + ". Refresh the chapter list.")
 
     filtered = []
     for chunk in chunks:
-        page = chunk.page_number or 1
+        page = chunk.page_number
+        if page is None:
+            continue
         if any(ch.start_page <= page <= (ch.end_page or ch.start_page) for ch in selected):
             filtered.append(chunk)
-
-    if not filtered:
-        # Fallback to text content matching if page numbers are misaligned
-        for chunk in chunks:
-            content = (chunk.content or "").lower()
-            if any(ch.title.lower() in content for ch in selected):
-                filtered.append(chunk)
 
     return filtered

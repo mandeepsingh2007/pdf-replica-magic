@@ -228,5 +228,9 @@ def structure_final_test_json(
         "section_C_Objective": take("true_false") + take("fill_blank"),
         "section_D_MatchFollowing": take("word_match") + take("picture_match"),
         "section_D_Subjective": take("short_answer"),
+        "section_oral": take("oral"),
+        "section_who_said": take("who_said"),
+        "section_answer_following": take("answer_following"),
+        "section_creative": take("creative"),
     }
     return test_paper

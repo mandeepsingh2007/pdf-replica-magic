@@ -41,6 +41,10 @@ const SECTION_KEYS = [
   "section_C_Objective",
   "section_D_MatchFollowing",
   "section_D_Subjective",
+  "section_oral",
+  "section_who_said",
+  "section_answer_following",
+  "section_creative",
 ] as const;
 
 function parseMatchAnswer(raw: string | undefined): Record<string, string> {
@@ -85,7 +89,11 @@ type SectionLetterKey =
   | "fillBlank"
   | "wordMatch"
   | "pictureMatch"
-  | "subjective";
+  | "subjective"
+  | "oral"
+  | "whoSaid"
+  | "answerFollowing"
+  | "creative";
 
 function assignSectionLetters(
   testData: Record<string, QuestionDisplay[]> | undefined
@@ -103,6 +111,10 @@ function assignSectionLetters(
   if (match.some((q) => q.type === "word_match")) letters.wordMatch = next();
   if (match.some((q) => q.type === "picture_match")) letters.pictureMatch = next();
   if (testData.section_D_Subjective?.length) letters.subjective = next();
+  if (testData.section_oral?.length) letters.oral = next();
+  if (testData.section_who_said?.length) letters.whoSaid = next();
+  if (testData.section_answer_following?.length) letters.answerFollowing = next();
+  if (testData.section_creative?.length) letters.creative = next();
   return letters;
 }
 
@@ -762,6 +774,104 @@ export default function TestPaperPage() {
               </>
             );
           })()}
+
+        {content?.section_oral?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.oral, "मौखिक प्रश्न / Oral Questions")}
+            questions={content.section_oral}
+            renderQuestion={(q, i) => {
+              const d = q.display as { question?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg">{d.question}</p>
+                  <textarea
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="उत्तर लिखें"
+                    rows={3}
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
+
+        {content?.section_who_said?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.whoSaid, "किसने किससे कहा?")}
+            questions={content.section_who_said}
+            renderQuestion={(q, i) => {
+              const d = q.display as { quote?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg">
+                    “{d.quote}”
+                  </p>
+                  <input
+                    type="text"
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="वक्ता → श्रोता"
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
+
+        {content?.section_answer_following?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.answerFollowing, "निम्नलिखित प्रश्नों के उत्तर दीजिए")}
+            questions={content.section_answer_following}
+            renderQuestion={(q, i) => {
+              const d = q.display as { question?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg">{d.question}</p>
+                  <textarea
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="उत्तर लिखें"
+                    rows={4}
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
+
+        {content?.section_creative?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.creative, "रचनात्मक कार्य")}
+            questions={content.section_creative}
+            renderQuestion={(q, i) => {
+              const d = q.display as { prompt?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg">{d.prompt}</p>
+                  <textarea
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="अपना रचनात्मक उत्तर लिखें"
+                    rows={5}
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
 
         {!gradeResult && (
           <div className="fixed bottom-0 left-0 right-0 z-20 px-3 py-3 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] sm:px-6 sm:py-4">

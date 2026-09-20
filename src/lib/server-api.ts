@@ -8,12 +8,15 @@ export type ServerSubject = {
   icon?: string | null;
 };
 
-export async function fetchSubjectsOnServer(): Promise<{
+export async function fetchSubjectsOnServer(
+  track?: "hindi" | "english"
+): Promise<{
   subjects: ServerSubject[];
   error: string | null;
 }> {
   try {
-    const res = await fetch(`${BACKEND_ORIGIN}/api/subjects`, {
+    const qs = track ? `?track=${track}` : "";
+    const res = await fetch(`${BACKEND_ORIGIN}/api/subjects${qs}`, {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });

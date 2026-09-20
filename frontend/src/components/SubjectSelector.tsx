@@ -16,7 +16,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { API_BASE, apiFetch } from "@/lib/api";
+import { API_BASE, apiFetch, readJson } from "@/lib/api";
 
 const QUESTIONS_PER_TYPE = 5;
 const MATCH_TYPE_IDS = new Set(["word_match", "picture_match"]);
@@ -66,6 +66,17 @@ const FORMAT_OPTIONS = [
   { id: "short_answer", label: "Short Answer (Subjective)" },
 ];
 
+export const HINDI_FORMAT_OPTIONS = [
+  { id: "oral", label: "मौखिक प्रश्न (Oral Questions)" },
+  { id: "mcq", label: "बहुविकल्पीय प्रश्न (MCQs)" },
+  { id: "fill_blank", label: "रिक्त स्थान भरिए (Fill in the Blanks)" },
+  { id: "who_said", label: "किसने किससे कहा? (Who Said to Whom)" },
+  { id: "word_match", label: "मिलान करो — शब्द (Word Match)", group: "match" as const },
+  { id: "picture_match", label: "मिलान करो — चित्र (Picture Match)", group: "match" as const },
+  { id: "answer_following", label: "निम्नलिखित प्रश्नों के उत्तर दीजिए" },
+  { id: "creative", label: "रचनात्मक कार्य (Creative Work)" },
+];
+
 type Step = "subject" | "chapters" | "format" | "generating" | "complete" | "failed";
 
 function subjectIcon(icon?: string | null): LucideIcon {
@@ -73,14 +84,22 @@ function subjectIcon(icon?: string | null): LucideIcon {
   return Sparkles;
 }
 
+type FormatOption = { id: string; label: string; group?: "match" };
+
 type SubjectSelectorProps = {
   initialSubjects?: Subject[];
   initialLoadError?: string;
+  formatOptions?: FormatOption[];
+  subjectsTrack?: "hindi" | "english";
+  testBasePath?: string;
 };
 
 export default function SubjectSelector({
   initialSubjects,
   initialLoadError,
+  formatOptions = FORMAT_OPTIONS,
+  subjectsTrack,
+  testBasePath = "/test",
 }: SubjectSelectorProps) {
   const [step, setStep] = useState<Step>("subject");
   const [subjects, setSubjects] = useState<Subject[]>(initialSubjects ?? []);
@@ -103,10 +122,16 @@ export default function SubjectSelector({
       setLoadingSubjects(true);
       setErrorMsg("");
       try {
-        const res = await apiFetch(`${API_BASE}/subjects`, { cache: "no-store" });
+        const qs = subjectsTrack ? `?track=${subjectsTrack}` : "";
+        const res = await apiFetch(`${API_BASE}/subjects${qs}`, { cache: "no-store" });
         if (!res.ok) throw new Error("Failed to load subjects");
-        const data: Subject[] = await res.json();
-        setSubjects(data);
+        const data: Subject[] = await readJson(res);
+        // Hindi Class 1 stays in backend; hide only on the Hindi portal UI.
+        setSubjects(
+          subjectsTrack === "hindi"
+            ? data.filter((s) => s.name !== "Hindi-1")
+            : data
+        );
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to load subjects";
         setErrorMsg(
@@ -127,10 +152,10 @@ export default function SubjectSelector({
     try {
       const res = await apiFetch(`${API_BASE}/subjects/${subject.id}/chapters`);
       if (!res.ok) {
-        const err = await res.json();
+        const err = await readJson(res);
         throw new Error(err.detail || "Failed to load chapters");
       }
-      const data: Chapter[] = await res.json();
+      const data: Chapter[] = await readJson(res);
       setChapters(data);
       setSelectedChapterIds([]);
       setStep("chapters");
@@ -184,11 +209,11 @@ export default function SubjectSelector({
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await readJson(res);
         throw new Error(err.detail || "Failed to start generation");
       }
 
-      const data = await res.json();
+      const data = await readJson(res);
       pollStatus(data.task_id);
     } catch (e) {
       setStep("failed");
@@ -228,7 +253,7 @@ export default function SubjectSelector({
         }
 
         badPolls = 0;
-        const data = await res.json();
+        const data = await readJson(res);
         setProgress(data.progress);
         if (data.current_step) setCurrentStep(data.current_step);
 
@@ -320,7 +345,7 @@ export default function SubjectSelector({
             </p>
             <div className="flex flex-col w-full gap-3 sm:flex-row sm:justify-center">
               <a
-                href={`/test/${testId}`}
+                href={`${testBasePath}/${testId}`}
                 className="px-8 py-4 font-semibold text-black transition-colors bg-white rounded-xl hover:bg-gray-200"
               >
                 Take Test Online
@@ -381,7 +406,7 @@ export default function SubjectSelector({
           </p>
 
           <div className="space-y-3">
-            {FORMAT_OPTIONS.map((opt) => (
+            {formatOptions.map((opt) => (
               <label
                 key={opt.id}
                 className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-colors ${
@@ -438,7 +463,9 @@ export default function SubjectSelector({
             <h3 className="text-2xl font-bold">{selectedSubject?.display_name} — Chapters</h3>
           </div>
           <p className="mb-6 text-gray-400">
-            Choose one or more chapters from the Class 1 textbook.
+            {subjectsTrack === "hindi"
+              ? "एक या अधिक पाठ चुनें। हर चुने हुए पाठ से प्रश्न बनेंगे।"
+              : "Choose one or more chapters from the Class 1 textbook."}
           </p>
 
           <div className="space-y-2 overflow-y-auto max-h-80">
@@ -507,7 +534,9 @@ export default function SubjectSelector({
   return (
     <div className="w-full max-w-3xl mx-auto">
       <p className="mb-6 text-center text-gray-400">
-        Select a Class 1 Semester 1 subject to begin.
+        {subjectsTrack === "hindi"
+          ? "हिंदी पाठमाला की कक्षा चुनें।"
+          : "Select a Class 1 Semester 1 subject to begin."}
       </p>
 
       {loadingSubjects ? (
@@ -538,7 +567,9 @@ export default function SubjectSelector({
                   )}
                 </div>
                 <h3 className="text-lg font-bold">{subject.display_name}</h3>
-                <p className="mt-1 text-xs text-gray-400">Class 1 · Sem 1</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {subjectsTrack === "hindi" ? "हिंदी पाठमाला" : "Class 1 · Sem 1"}
+                </p>
               </button>
             );
           })}

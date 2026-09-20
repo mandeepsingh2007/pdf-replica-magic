@@ -3,20 +3,22 @@ import io
 import os
 import time
 import numpy as np
-import google.generativeai as genai
+from app.services.gemini_client import generate_gemini_content_sync, image_part
 from PIL import Image
 from app.core.config import settings
 from app.services.image_quality import split_illustration_file
+from app.services.verified_hindi_source import verified_page_texts
+from app.services.ocr_cache import pdf_fingerprint, read_cached_page, write_cached_page
 
-# Class 1 textbooks have many small icons / counters — keep them usable
-MIN_IMAGE_SIDE_PX = 48
-MIN_RECT_SIDE = 28
+# Skip bullets, page ornaments, and tiny icons — keep real illustrations
+MIN_IMAGE_SIDE_PX = 80
+MIN_RECT_SIDE = 48
 IMAGE_RENDER_ZOOM = 2.5
-MAX_IMAGES_PER_PAGE = 20
-DRAWING_CLUSTER_MIN_AREA = 4000
+MAX_IMAGES_PER_PAGE = 10
+DRAWING_CLUSTER_MIN_AREA = 9000
 DRAWING_MERGE_GAP = 18
 
-OCR_PROMPT = """You are an expert OCR system. Extract ALL text content from this scanned textbook page image.
+OCR_PROMPT = """You are an expert OCR system. Extract ALL text content from this textbook page image, including Hindi (Devanagari) and English.
 
 Rules:
 1. Extract every word, sentence, paragraph, heading, subheading, and caption visible on the page.
@@ -30,30 +32,59 @@ Rules:
 """
 
 
-def ocr_page_with_gemini(page, page_num: int, retries: int = 3) -> str:
-    """Convert a PDF page to image and OCR it using Gemini Vision."""
-    if not settings.GEMINI_API_KEY:
-        return ""
+_OCR_KEY_WARNED = False
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.LLM_MODEL)
+
+def ocr_page_with_gemini(
+    page,
+    page_num: int,
+    retries: int = 3,
+    *,
+    fingerprint: str | None = None,
+) -> str:
+    """Convert a PDF page to image and OCR it using Gemini Vision."""
+    global _OCR_KEY_WARNED
+    if fingerprint:
+        cached = read_cached_page(fingerprint, "gemini", page_num)
+        if cached:
+            return cached
+
+    if not settings.GEMINI_API_KEY:
+        if not _OCR_KEY_WARNED:
+            print(
+                "    OCR skipped: set GEMINI_API_KEY or GOOGLE_API_KEY in backend/.env",
+                flush=True,
+            )
+            _OCR_KEY_WARNED = True
+        return ""
 
     pix = page.get_pixmap(dpi=150)
     img_bytes = pix.tobytes("png")
 
     for attempt in range(retries):
         try:
-            response = model.generate_content([
+            response = generate_gemini_content_sync([
                 OCR_PROMPT,
-                {"mime_type": "image/png", "data": img_bytes},
+                image_part(img_bytes, "image/png"),
             ])
             text = response.text.strip()
             if text:
+                if fingerprint:
+                    write_cached_page(fingerprint, "gemini", page_num, text)
                 return text
         except Exception as e:
             print(f"    OCR attempt {attempt+1} failed for page {page_num}: {e}")
-            if "429" in str(e) or "quota" in str(e).lower():
-                time.sleep(15 * (attempt + 1))
+            err = str(e)
+            if "429" in err or "quota" in err.lower():
+                # Free-tier resets are slow; wait at least the hinted delay.
+                wait = 60
+                if "retry in" in err.lower():
+                    try:
+                        part = err.lower().split("retry in", 1)[1]
+                        wait = max(60, int(float("".join(ch for ch in part[:12] if ch.isdigit() or ch == "."))))
+                    except ValueError:
+                        wait = 60 * (attempt + 1)
+                time.sleep(wait)
             else:
                 time.sleep(3)
 
@@ -431,6 +462,94 @@ def _extract_drawing_clusters(
     return found
 
 
+def _extract_text_blocks_from_doc(doc: fitz.Document) -> list[dict]:
+    total_pages = len(doc)
+    extracted_text_blocks: list[dict] = []
+    corrections = verified_page_texts(doc.name) if doc.name else {}
+    fingerprint = None
+    try:
+        if doc.name and os.path.isfile(doc.name):
+            fingerprint = pdf_fingerprint(doc.name)
+    except OSError:
+        fingerprint = None
+
+    for page_num in range(total_pages):
+        page = doc.load_page(page_num)
+        current = page_num + 1
+
+        native_text = corrections.get(current, page.get_text().strip())
+
+        if native_text and len(native_text) > 50:
+            print(f"  Page {current}/{total_pages}: native text ({len(native_text)} chars)", flush=True)
+            extracted_text_blocks.append({
+                "page": current,
+                "text": native_text,
+                "bbox": (0, 0, page.rect.width, page.rect.height),
+            })
+        else:
+            print(f"  Page {current}/{total_pages}: OCR via Gemini...", end=" ", flush=True)
+            ocr_text = ocr_page_with_gemini(page, current, fingerprint=fingerprint)
+            if ocr_text:
+                print(f"done ({len(ocr_text)} chars)", flush=True)
+                extracted_text_blocks.append({
+                    "page": current,
+                    "text": ocr_text,
+                    "bbox": (0, 0, page.rect.width, page.rect.height),
+                })
+                time.sleep(2)
+            else:
+                print("no text", flush=True)
+
+    return extracted_text_blocks
+
+
+def extract_pdf_text_only(file_path: str) -> list[dict]:
+    """Text + Gemini OCR only. No image extraction."""
+    doc = fitz.open(file_path)
+    try:
+        blocks = _extract_text_blocks_from_doc(doc)
+        print(f"  TEXT TOTAL: pages={len(doc)} blocks={len(blocks)}", flush=True)
+        return blocks
+    finally:
+        doc.close()
+
+
+def extract_pdf_text_easyocr(file_path: str) -> list[dict]:
+    """Full-page EasyOCR for scanned Hindi books (no Gemini quota)."""
+    from app.services.image_label_service import ocr_page_text_easyocr
+
+    doc = fitz.open(file_path)
+    blocks: list[dict] = []
+    try:
+        fingerprint = pdf_fingerprint(file_path)
+        total = len(doc)
+        for page_num in range(total):
+            page = doc.load_page(page_num)
+            current = page_num + 1
+            cached = read_cached_page(fingerprint, "easyocr", current)
+            if cached:
+                print(f"  Page {current}/{total}: EasyOCR cache ({len(cached)} chars)", flush=True)
+                text = cached
+            else:
+                print(f"  Page {current}/{total}: EasyOCR...", end=" ", flush=True)
+                text = ocr_page_text_easyocr(page, current)
+                if text:
+                    write_cached_page(fingerprint, "easyocr", current, text)
+                    print(f"done ({len(text)} chars)", flush=True)
+                else:
+                    print("no text", flush=True)
+            if text:
+                blocks.append({
+                    "page": current,
+                    "text": text,
+                    "bbox": (0, 0, page.rect.width, page.rect.height),
+                })
+        print(f"  TEXT TOTAL: pages={total} blocks={len(blocks)}", flush=True)
+        return blocks
+    finally:
+        doc.close()
+
+
 def extract_pdf_data(file_path: str, output_image_dir: str):
     """
     Extracts text, structural elements, and images from a PDF using PyMuPDF.
@@ -442,39 +561,14 @@ def extract_pdf_data(file_path: str, output_image_dir: str):
 
     doc = fitz.open(file_path)
     total_pages = len(doc)
-    extracted_text_blocks = []
+    extracted_text_blocks = _extract_text_blocks_from_doc(doc)
     extracted_images = []
 
     for page_num in range(total_pages):
         page = doc.load_page(page_num)
         current = page_num + 1
 
-        # 1. Try native text extraction first (scanned pages often have tiny junk text)
-        native_text = page.get_text().strip()
-
-        if native_text and len(native_text) > 50:
-            print(f"  Page {current}/{total_pages}: native text ({len(native_text)} chars)", flush=True)
-            extracted_text_blocks.append({
-                "page": current,
-                "text": native_text,
-                "bbox": (0, 0, page.rect.width, page.rect.height),
-            })
-        else:
-            # 2. Scanned page: use Gemini OCR
-            print(f"  Page {current}/{total_pages}: OCR via Gemini...", end=" ", flush=True)
-            ocr_text = ocr_page_with_gemini(page, current)
-            if ocr_text:
-                print(f"done ({len(ocr_text)} chars)", flush=True)
-                extracted_text_blocks.append({
-                    "page": current,
-                    "text": ocr_text,
-                    "bbox": (0, 0, page.rect.width, page.rect.height),
-                })
-                time.sleep(2)  # Rate limit
-            else:
-                print("no text", flush=True)
-
-        # 3. Extract embedded images + vector drawing clusters
+        # Extract embedded images + vector drawing clusters
         original_xrefs = page.get_images(full=True)
         original_unique = len({img[0] for img in original_xrefs})
         original_drawings = len(page.get_drawings())
