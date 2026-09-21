@@ -57,6 +57,9 @@ def ocr_label_from_file(image_path: str) -> str:
     path = os.path.normpath(image_path)
     if not os.path.isfile(path):
         return ""
+    # 1GB hosts OOM/swap-thrash when EasyOCR loads torch — skip and use seeded labels.
+    if os.getenv("LOW_MEMORY", "").strip() in ("1", "true", "yes"):
+        return ""
     reader = _easyocr_reader()
     if reader is None:
         return ""
