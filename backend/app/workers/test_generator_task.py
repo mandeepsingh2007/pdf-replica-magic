@@ -391,8 +391,8 @@ async def generate_test_async(request_data: dict, task_id: str):
                     )
                 return sum(1 for q in candidate_list if q["type"] == q_type)
 
-            # Soft-skip ONLY match formats (need labeled images). Other selected
-            # formats must be present — otherwise the paper silently drops MCQs etc.
+            # Soft-skip ONLY match formats (need labeled images). Other formats:
+            # refill already tried; if still short but >0, assemble with what we have.
             MATCH_SOFT = frozenset({"picture_match", "word_match"})
             assemble_types = []
             missing_hard = []
@@ -408,6 +408,14 @@ async def generate_test_async(request_data: dict, task_id: str):
                         have,
                         need,
                     )
+                elif have > 0:
+                    logger.warning(
+                        "Partial format %s at assemble (%d/%d) — using available questions",
+                        q_type,
+                        have,
+                        need,
+                    )
+                    assemble_types.append(q_type)
                 else:
                     missing_hard.append(f"{q_type} ({have}/{need})")
 

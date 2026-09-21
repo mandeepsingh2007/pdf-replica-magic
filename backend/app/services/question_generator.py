@@ -25,6 +25,7 @@ from app.services.vlm_service import (
     is_junk_label,
     is_placeholder_description,
     short_label_for_image,
+    short_label_for_image_groq,
     short_label_for_image_lowmem,
     vision_quota_tripped,
 )
@@ -644,6 +645,38 @@ def _finalize_picture_match(
     return {"type": "picture_match", "data": q_data, "score": score, "marks": 5}
 
 
+async def _seeded_picture_label(img: dict, *, prefer_hindi: bool = False) -> str:
+    """Fast label from DB caption only — no EasyOCR / local torch."""
+    desc = (img.get("description") or img.get("caption") or "").strip()
+    if not desc or is_junk_label(desc) or desc.startswith("[OCR:"):
+        return ""
+    if "manual import" in desc.lower():
+        return ""
+    if prefer_hindi and not _DEVANAGARI_RE.search(desc):
+        translated = await _translate_label_to_hindi(desc)
+        return translated or ""
+    label = heuristic_short_label_from_description(desc)
+    if not label and len(desc.split()) <= 8:
+        from app.services.vlm_service import normalize_short_label
+
+        label = normalize_short_label(desc)
+    if not label or is_junk_label(label):
+        return ""
+    if prefer_hindi and _label_needs_hindi(label):
+        return await _translate_label_to_hindi(label) or ""
+    return label
+
+
+async def _label_selected_picture(img: dict, *, prefer_hindi: bool = False) -> str:
+    """Label one already-selected figure: Groq vision first, then seeded caption."""
+    path = img.get("image_path")
+    if path and os.path.isfile(path) and settings.GROQ_API_KEY:
+        label = await short_label_for_image_groq(path, hindi_only=prefer_hindi)
+        if label and not is_junk_label(label):
+            return label
+    return await _seeded_picture_label(img, prefer_hindi=prefer_hindi)
+
+
 async def _generate_picture_match_from_images(
     images: list[dict],
     count: int,
@@ -652,11 +685,10 @@ async def _generate_picture_match_from_images(
     used_image_ids: set[int] | None = None,
     chapter_ranges: list[tuple[int, int]] | None = None,
 ) -> list[dict]:
-    """Build picture-match questions — one exercise uses 5 unique images."""
+    """Select figures first, then Groq-vision-label only those picks."""
     questions: list[dict] = []
     pairs = MATCH_PAIRS_PER_QUESTION
     prefer_hindi = _is_hindi_subject(subject_name)
-    # Round-robin across chapters; do not re-sort by page (that re-clusters one lesson).
     pool = _allocate_picture_pool_balanced(images, chapter_ranges)
     cursor = 0
 
@@ -666,17 +698,24 @@ async def _generate_picture_match_from_images(
     for q_idx in range(count):
         selected: list[dict] = []
         labels: list[str] = []
-        # When Vision quota is dead we rely on OCR/Groq translate — don't probe forever.
-        max_probes = min(len(pool), 12 if vision_quota_tripped() else max(15, len(pool)))
-        probes = 0
-        while len(selected) < pairs and cursor < len(pool) and probes < max_probes:
+        # At most ~3 candidates per needed slot — never OCR-scan the whole book.
+        max_attempts = min(len(pool) - cursor, pairs * 3)
+        attempts = 0
+        while len(selected) < pairs and cursor < len(pool) and attempts < max_attempts:
             candidate = pool[cursor]
             cursor += 1
-            probes += 1
-            if any(candidate.get("id") == s.get("id") for s in selected):
+            attempts += 1
+            cid = candidate.get("id")
+            if used_image_ids is not None and cid in used_image_ids:
                 continue
-            label = await _resolve_picture_label(candidate, prefer_hindi=prefer_hindi)
+            if any(cid == s.get("id") for s in selected):
+                continue
+            label = await _label_selected_picture(candidate, prefer_hindi=prefer_hindi)
             if not label:
+                logger.info(
+                    "Picture match: skip image id=%s (no Groq/seed label)",
+                    cid,
+                )
                 continue
             selected.append(candidate)
             labels.append(label)
@@ -712,6 +751,11 @@ async def _generate_picture_match_from_images(
 
         score = heuristic_quality_score(q_data, context)
         questions.append({"type": "picture_match", "data": q_data, "score": score, "marks": 5})
+        logger.info(
+            "Picture match Q%d: Groq-labeled %d figures",
+            q_idx + 1,
+            pairs,
+        )
 
     return questions
 
@@ -1086,10 +1130,47 @@ async def generate_all_types(
             )
             picked = result[:keep]
         else:
-            extra = 0
-            result = await gen_fn(context, keep + extra, subject_name, chapter_scope)
+            result = await gen_fn(context, keep, subject_name, chapter_scope)
             result.sort(key=lambda q: q.get("score", 0), reverse=True)
             picked = result[:keep]
+            # One refill if LLM returned a short batch (common on Groq + grounded Hindi).
+            shortage = keep - len(picked)
+            refill = 0
+            while shortage > 0 and refill < 2:
+                refill += 1
+                more_ctx = _append_avoid_block(
+                    sample_chunk_context(
+                        chunks,
+                        batch_idx + refill,
+                        chapter_ranges=chapter_ranges,
+                    ),
+                    avoid_stems,
+                )
+                more = await gen_fn(more_ctx, shortage, subject_name, chapter_scope)
+                more.sort(key=lambda q: q.get("score", 0), reverse=True)
+                existing = {_stem_for_avoid(q) for q in picked}
+                added = 0
+                for q in more:
+                    stem = _stem_for_avoid(q)
+                    if stem and stem in existing:
+                        continue
+                    picked.append(q)
+                    if stem:
+                        existing.add(stem)
+                    added += 1
+                    if len(picked) >= keep:
+                        break
+                result.extend(more)
+                shortage = keep - len(picked)
+                logger.info(
+                    "%s refill %d: +%d (now %d/%d)",
+                    label,
+                    refill,
+                    added,
+                    len(picked),
+                    keep,
+                )
+            picked = picked[:keep]
 
         all_questions.extend(picked)
         for q in picked:

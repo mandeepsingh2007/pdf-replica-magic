@@ -303,6 +303,83 @@ async def short_label_for_image_lowmem(
                 pass
 
 
+def _groq_vision_model() -> str:
+    model = (settings.LLM_MODEL or "").strip()
+    if "qwen" in model.lower():
+        return model
+    return "qwen/qwen3.8-27b"
+
+
+def _jpeg_data_url_for_vision(image_path: str, max_px: int = 768) -> str | None:
+    """Shrink figure to a data-URL JPEG for Groq vision (keeps payload small)."""
+    path = Path(image_path)
+    if not path.is_file():
+        return None
+    import base64
+    from io import BytesIO
+
+    try:
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((max_px, max_px))
+            buf = BytesIO()
+            im.save(buf, format="JPEG", quality=85, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception as e:
+        logger.warning("Groq vision resize failed for %s: %s", image_path, e)
+        return None
+
+
+async def short_label_for_image_groq(
+    image_path: str, *, hindi_only: bool = True
+) -> str:
+    """Label one textbook figure via Groq multimodal (Qwen). No local EasyOCR."""
+    if not settings.GROQ_API_KEY:
+        return ""
+    data_url = _jpeg_data_url_for_vision(image_path)
+    if not data_url:
+        return ""
+
+    prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=_groq_vision_model(),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=64,
+            ),
+            timeout=60,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        # Drop accidental multi-line / reasoning tails.
+        raw = raw.split("\n")[0].strip().strip('"').strip("'")
+        label = normalize_short_label(raw) if raw else ""
+        if not label or is_junk_label(label) or is_generic_appearance_label(label):
+            return ""
+        if hindi_only and not re.search(r"[\u0900-\u097F]", label):
+            return ""
+        return label
+    except Exception as e:
+        logger.warning("Groq vision label failed for %s: %s", image_path, e)
+        return ""
+
+
 async def short_labels_from_metadata(
     items: list[tuple[str, str]],
 ) -> list[str]:
