@@ -15,6 +15,8 @@ const inputStyle = {
 function HindiLoginForm() {
   const searchParams = useSearchParams();
   const queryError = searchParams.get("error");
+  const next = searchParams.get("next") ?? "";
+  const forEbooks = next.startsWith("/hindi/ebooks");
   const displayError =
     queryError === "invalid"
       ? "गलत आईडी या पासवर्ड। फिर से कोशिश करें।"
@@ -30,12 +32,15 @@ function HindiLoginForm() {
         </div>
         <h1 className="text-2xl font-black text-slate-900">हिंदी पाठमाला लॉगिन</h1>
         <p className="mt-2 text-sm font-semibold text-slate-600">
-          Test Generator के लिए अपनी आईडी और पासवर्ड डालें
+          {forEbooks
+            ? "E-Book पढ़ने के लिए अपनी आईडी और पासवर्ड डालें"
+            : "Test Generator के लिए अपनी आईडी और पासवर्ड डालें"}
         </p>
       </div>
 
       {/* Extensions may add fdprocessedid to form controls before hydration. */}
       <form action="/api/hindi-login" method="post" className="space-y-5">
+        {next.startsWith("/hindi/") && <input type="hidden" name="next" value={next} />}
         <div>
           <label htmlFor="hindi-id" className="block mb-2 text-sm font-bold text-slate-800">
             ID

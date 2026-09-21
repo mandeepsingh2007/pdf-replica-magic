@@ -49,9 +49,9 @@ export default function HindiPortalPage() {
             </span>
             <h2>E-Book</h2>
             <p>डिजिटल ई-पुस्तक पढ़ें ऑडियो उच्चारण, चित्र और पन्ना पलटने वाले आकर्षक अनुभव के साथ।</p>
-            <button type="button" className="hp-btn hp-btn-yellow">
+            <Link href="/hindi/login?next=/hindi/ebooks" className="hp-btn hp-btn-yellow">
               पढ़ना शुरू करें (Open E-Book)
-            </button>
+            </Link>
           </div>
 
           <div className="hp-card hp-card-video">

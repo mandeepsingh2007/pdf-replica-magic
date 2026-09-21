@@ -4,7 +4,15 @@ import type { NextRequest } from "next/server";
 const AUTH_COOKIE = "tg_auth";
 const HINDI_COOKIE = "tg_hindi_auth";
 
-const PUBLIC_PATHS = ["/", "/gate", "/login", "/semester", "/hindi", "/hindi/login", "/hindi/videos"];
+const PUBLIC_PATHS = [
+  "/",
+  "/gate",
+  "/login",
+  "/semester",
+  "/hindi",
+  "/hindi/login",
+  "/hindi/videos",
+];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -53,9 +61,17 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  if (pathname.startsWith("/hindi") && pathname !== "/hindi" && pathname !== "/hindi/videos") {
+  if (
+    pathname.startsWith("/hindi") &&
+    pathname !== "/hindi" &&
+    pathname !== "/hindi/videos"
+  ) {
     if (!isHindiAuth) {
-      return NextResponse.redirect(new URL("/hindi/login", request.url));
+      const login = new URL("/hindi/login", request.url);
+      if (pathname.startsWith("/hindi/ebooks")) {
+        login.searchParams.set("next", pathname);
+      }
+      return NextResponse.redirect(login);
     }
     return NextResponse.next();
   }

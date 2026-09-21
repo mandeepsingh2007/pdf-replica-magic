@@ -6,17 +6,32 @@ const AUTH_COOKIE = "tg_hindi_auth";
 const VALID_ID = "hindiid";
 const VALID_PASSWORD = "HindiPathmala@2026";
 
-async function readCredentials(request: Request): Promise<{ id: string; password: string }> {
+async function readCredentials(
+  request: Request,
+): Promise<{ id: string; password: string; next: string }> {
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const body = (await request.json()) as { id?: string; password?: string };
-    return { id: body.id?.trim() ?? "", password: (body.password ?? "").trim() };
+    const body = (await request.json()) as { id?: string; password?: string; next?: string };
+    return {
+      id: body.id?.trim() ?? "",
+      password: (body.password ?? "").trim(),
+      next: (body.next ?? "").trim(),
+    };
   }
   const form = await request.formData();
   return {
     id: String(form.get("id") ?? "").trim(),
     password: String(form.get("password") ?? "").trim(),
+    next: String(form.get("next") ?? "").trim(),
   };
+}
+
+/** Only same-origin Hindi app paths — blocks open redirects. */
+function safeHindiNext(next: string): string | null {
+  if (!next.startsWith("/hindi/") || next.startsWith("//") || next.includes("://")) {
+    return null;
+  }
+  return next;
 }
 
 function wantsJsonResponse(request: Request): boolean {
@@ -48,8 +63,9 @@ function applyAuthCookie(response: NextResponse, request: Request): void {
 export async function POST(request: Request) {
   let id: string;
   let password: string;
+  let next: string;
   try {
-    ({ id, password } = await readCredentials(request));
+    ({ id, password, next } = await readCredentials(request));
   } catch {
     if (wantsJsonResponse(request)) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
@@ -59,21 +75,25 @@ export async function POST(request: Request) {
 
   const ok = id === VALID_ID && password === VALID_PASSWORD;
   const base = redirectBase(request);
+  const dest = safeHindiNext(next) ?? "/hindi/upload";
 
   if (!ok) {
     if (wantsJsonResponse(request)) {
       return NextResponse.json({ error: "Invalid ID or password." }, { status: 401 });
     }
-    return NextResponse.redirect(new URL("/hindi/login?error=invalid", base), 303);
+    const fail = new URL("/hindi/login", base);
+    fail.searchParams.set("error", "invalid");
+    if (safeHindiNext(next)) fail.searchParams.set("next", next);
+    return NextResponse.redirect(fail, 303);
   }
 
   if (wantsJsonResponse(request)) {
-    const response = NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true, next: dest });
     applyAuthCookie(response, request);
     return response;
   }
 
-  const response = NextResponse.redirect(new URL("/hindi/upload", base), 303);
+  const response = NextResponse.redirect(new URL(dest, base), 303);
   applyAuthCookie(response, request);
   return response;
 }
