@@ -4,7 +4,7 @@ import { requestIsSecure } from "@/lib/auth-cookie";
 
 const AUTH_COOKIE = "tg_auth";
 const VALID_ID = "testid";
-const VALID_PASSWORD = "NeGraphics@2026";
+const VALID_PASSWORD = "orchid123";
 
 async function readCredentials(request: Request): Promise<{ id: string; password: string }> {
   const contentType = request.headers.get("content-type") ?? "";
