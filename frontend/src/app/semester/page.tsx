@@ -44,7 +44,7 @@ export default function SemesterPortalPage() {
 
       <main>
         <div className="grid-container">
-          <a href="#ebook" className="action-card">
+          <Link href="/semester/ebooks" className="action-card">
             <div className="card-icon-wrapper ebook-color">
               <BookOpen style={{ width: 28, height: 28 }} />
             </div>
@@ -55,7 +55,7 @@ export default function SemesterPortalPage() {
             <span className="card-btn">
               Open Reader <ArrowRight style={{ width: 16, height: 16 }} />
             </span>
-          </a>
+          </Link>
 
           <a href="#lesson-plan" className="action-card">
             <div className="card-icon-wrapper lesson-color">
