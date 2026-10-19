@@ -57,7 +57,7 @@ export default function SemesterPortalPage() {
             </span>
           </Link>
 
-          <a href="#lesson-plan" className="action-card">
+          <Link href="/semester/lesson-plans" className="action-card">
             <div className="card-icon-wrapper lesson-color">
               <CalendarCheck style={{ width: 28, height: 28 }} />
             </div>
@@ -68,9 +68,9 @@ export default function SemesterPortalPage() {
             <span className="card-btn">
               View Plans <ArrowRight style={{ width: 16, height: 16 }} />
             </span>
-          </a>
+          </Link>
 
-          <a href="#worksheet" className="action-card">
+          <div className="action-card">
             <div className="card-icon-wrapper worksheet-color">
               <FileText style={{ width: 28, height: 28 }} />
             </div>
@@ -79,9 +79,9 @@ export default function SemesterPortalPage() {
               Printable chapter-wise assessment sheets with skill-building practice questions.
             </p>
             <span className="card-btn">
-              Download PDF <ArrowRight style={{ width: 16, height: 16 }} />
+              Create Worksheet <ArrowRight style={{ width: 16, height: 16 }} />
             </span>
-          </a>
+          </div>
 
           <Link href="/login" className="action-card">
             <div className="card-icon-wrapper test-color">

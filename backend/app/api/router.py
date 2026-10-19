@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import subjects, documents, tests, tasks, websocket
+from app.api.endpoints import subjects, documents, tests, tasks, websocket, lesson_plans
 
 api_router = APIRouter()
 
@@ -8,3 +8,4 @@ api_router.include_router(documents.router, tags=["Documents"])
 api_router.include_router(tests.router, tags=["Tests"])
 api_router.include_router(tasks.router, tags=["Tasks"])
 api_router.include_router(websocket.router, tags=["WebSockets"])
+api_router.include_router(lesson_plans.router, tags=["Lesson Plans"])

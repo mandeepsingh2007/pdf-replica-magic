@@ -19,6 +19,8 @@ import {
 import { API_BASE, apiFetch, readJson } from "@/lib/api";
 
 const QUESTIONS_PER_TYPE = 5;
+const MARK_OPTIONS = [10, 20, 30, 50] as const;
+type MarkOption = (typeof MARK_OPTIONS)[number];
 const MATCH_TYPE_IDS = new Set(["word_match", "picture_match"]);
 
 function questionsForType(typeId: string): number {
@@ -113,6 +115,8 @@ export default function SubjectSelector({
   const [currentStep, setCurrentStep] = useState("");
   const [testId, setTestId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState(initialLoadError ?? "");
+  const [totalMarks, setTotalMarks] = useState<MarkOption>(50);
+  const [schoolName, setSchoolName] = useState("");
 
   useEffect(() => {
     if (initialSubjects !== undefined) {
@@ -189,6 +193,11 @@ export default function SubjectSelector({
       setErrorMsg("Select at least one question format.");
       return;
     }
+    const school = schoolName.trim().replace(/\s+/g, " ");
+    if (!school) {
+      setErrorMsg("Enter the school name.");
+      return;
+    }
 
     setStep("generating");
     setErrorMsg("");
@@ -204,7 +213,8 @@ export default function SubjectSelector({
           chapter_ids: selectedChapterIds,
           include_types: selectedTypes,
           questions_per_type: QUESTIONS_PER_TYPE,
-          total_marks: 50,
+          total_marks: totalMarks,
+          school_name: school,
         }),
       });
 
@@ -312,8 +322,8 @@ export default function SubjectSelector({
     0
   );
   const marksPerQuestion =
-    totalQuestions > 0 ? Math.floor(50 / totalQuestions) : 0;
-  const extraMarkQuestions = totalQuestions > 0 ? 50 % totalQuestions : 0;
+    totalQuestions > 0 ? Math.floor(totalMarks / totalQuestions) : 0;
+  const extraMarkQuestions = totalQuestions > 0 ? totalMarks % totalQuestions : 0;
 
   if (step === "failed") {
     return (
@@ -340,7 +350,7 @@ export default function SubjectSelector({
             </div>
             <h3 className="mb-2 text-3xl font-bold">Test Ready!</h3>
             <p className="mb-8 text-gray-400">
-              {totalQuestions} questions · 50 marks total
+              {totalQuestions} questions · {totalMarks} marks total
               from {selectedSubject?.display_name}.
             </p>
             <div className="flex flex-col w-full gap-3 sm:flex-row sm:justify-center">
@@ -426,9 +436,41 @@ export default function SubjectSelector({
             ))}
           </div>
 
+          <label className="block mt-6">
+            <span className="text-sm font-semibold">School name</span>
+            <input
+              type="text"
+              value={schoolName}
+              maxLength={120}
+              onChange={(event) => setSchoolName(event.target.value)}
+              placeholder="Enter the school name"
+              className="w-full px-4 py-3 mt-2 text-sm text-white border rounded-xl border-white/10 bg-white/5 placeholder:text-gray-500"
+            />
+          </label>
+
+          <div className="mt-6">
+            <p className="mb-3 text-sm font-semibold">Total marks</p>
+            <div className="grid grid-cols-4 gap-2">
+              {MARK_OPTIONS.map((marks) => (
+                <button
+                  key={marks}
+                  type="button"
+                  onClick={() => setTotalMarks(marks)}
+                  className={`px-3 py-3 text-sm font-bold border rounded-xl ${
+                    totalMarks === marks
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-white/10 hover:border-white/20"
+                  }`}
+                >
+                  {marks}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {selectedTypes.length > 0 && (
             <p className="mt-4 text-sm text-blue-300">
-              {totalQuestions} questions · 50 marks
+              {totalQuestions} questions · {totalMarks} marks
               {extraMarkQuestions > 0
                 ? ` (${marksPerQuestion}–${marksPerQuestion + 1} marks each)`
                 : ` (${marksPerQuestion} marks each)`}
@@ -441,7 +483,7 @@ export default function SubjectSelector({
             onClick={handleGenerate}
             className="w-full px-10 py-4 mt-8 text-lg font-bold text-white transition-all bg-blue-600 rounded-xl hover:bg-blue-700"
           >
-            Generate 50-Mark Test
+            Generate {totalMarks}-Mark Test
           </button>
         </div>
       </div>

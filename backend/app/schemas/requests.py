@@ -1,10 +1,19 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Any
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional, List, Any
 
 class GenerateTestRequest(BaseModel):
     subject_id: int
     document_id: Optional[int] = None
-    total_marks: int = Field(default=50, ge=10, le=100)
+    total_marks: Literal[10, 20, 30, 50] = 50
+    school_name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("school_name")
+    @classmethod
+    def clean_school_name(cls, value: str) -> str:
+        text = " ".join(value.split())
+        if not text:
+            raise ValueError("Enter the school name.")
+        return text[:120]
     difficulty: str = Field(default="mixed")
     include_types: Optional[List[str]] = Field(
         default=None,

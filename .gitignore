@@ -50,4 +50,6 @@ backend/.venv/
 # Local DB (use test_generator.db.deploy for deploy)
 backend/*.db
 backend/*.db-journal
+backend/*.db-shm
+backend/*.db-wal
 !backend/test_generator.db.deploy

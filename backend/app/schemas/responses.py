@@ -70,6 +70,7 @@ class TestAttemptResponse(BaseModel):
     id: int
     title: str
     subject_name: str
+    school_name: str = ""
     document_id: Optional[int] = None
     total_marks: int
     total_questions: int

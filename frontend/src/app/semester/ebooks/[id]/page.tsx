@@ -50,7 +50,7 @@ export default async function SemesterEbookReaderPage({ params }: Props) {
       <iframe
         className="sem-reader-frame"
         title={book.subject}
-        src={`/semester/ebooks/${book.id}/${book.entry}`}
+        src={`/semester/ebooks/${book.id}/${encodeURIComponent(book.entry)}`}
         allow="fullscreen"
       />
     </div>

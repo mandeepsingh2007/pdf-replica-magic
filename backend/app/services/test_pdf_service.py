@@ -52,6 +52,13 @@ def _esc(text: str) -> str:
     )
 
 
+def _school_line(name: str) -> str:
+    cleaned = " ".join((name or "").split())
+    if not cleaned:
+        return ""
+    return f"<p class='school'>{_esc(cleaned)}</p>"
+
+
 def _marks_label(mks: int) -> str:
     return f"[{mks} mark{'s' if mks != 1 else ''}]"
 
@@ -203,7 +210,8 @@ def _question_html(
     q: dict,
     image_alias: dict[int, str],
 ) -> str:
-    marks = int(q.get("marks") or 1)
+    raw_marks = q.get("marks")
+    marks = int(raw_marks if raw_marks is not None else 1)
     display = q.get("display") or {}
     q_type = q.get("type") or ""
 
@@ -302,6 +310,12 @@ h1 {{
   font-size: 16pt;
   text-align: center;
   margin: 0 0 4pt 0;
+  font-weight: bold;
+}}
+.school {{
+  font-size: 18pt;
+  text-align: center;
+  margin: 0 0 6pt 0;
   font-weight: bold;
 }}
 h2 {{
@@ -428,7 +442,9 @@ def _build_image_archive(
 def build_answer_key_pdf(test: GeneratedTest, subject_name: str) -> bytes:
     """Answer key for only the questions printed on this test paper."""
     test_data = parse_test_data(test)
+    test_school = " ".join(str(test_data.get("school_name") or "").split())
     parts: list[str] = [
+        _school_line(test_school),
         f"<h1>{_esc(test.title or 'Generated Test')} — ANSWER KEY</h1>",
         (
             f"<p class='sub'>Subject: {_esc(subject_name)} &nbsp;&nbsp;|&nbsp;&nbsp; "
@@ -472,6 +488,7 @@ def build_test_pdf(
     archive, image_alias = _build_image_archive(image_paths)
 
     parts: list[str] = [
+        _school_line(payload.get("school_name") or ""),
         f"<h1>{_esc(payload['title'])}</h1>",
         "<p class='sub'>FINAL EXAMINATION</p>",
         (

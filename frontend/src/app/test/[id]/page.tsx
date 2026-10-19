@@ -229,6 +229,7 @@ export default function TestPaperPage() {
   const [testMeta, setTestMeta] = useState<{
     title: string;
     subject_name: string;
+    school_name?: string;
     document_id?: number | null;
     total_marks: number;
     total_questions: number;
@@ -451,6 +452,9 @@ export default function TestPaperPage() {
 
         <div className="p-4 mb-6 bg-white border border-gray-200 shadow-sm rounded-2xl sm:p-8 sm:mb-8">
           <div className="text-center">
+            {testMeta.school_name ? (
+              <p className="mb-3 text-lg font-extrabold text-gray-900 sm:text-2xl">{testMeta.school_name}</p>
+            ) : null}
             <h1 className="text-xl font-bold uppercase tracking-wide sm:text-3xl sm:tracking-widest">{testMeta.title}</h1>
             <h2 className="mt-2 text-base font-medium text-gray-600 sm:text-xl">FINAL EXAMINATION</h2>
             <div className="flex flex-col gap-2 justify-between mt-6 text-xs font-bold text-gray-500 uppercase border-b-2 border-gray-200 pb-4 sm:flex-row sm:mt-8 sm:text-sm">

@@ -60,6 +60,15 @@ LABEL_PROMPT_HINDI_STRICT = """यह हिंदी पाठ्यपुस�
 अंग्रेज़ी शब्द बिल्कुल न लिखें। केवल नाम — कोई वाक्य नहीं।
 उदाहरण: माँ और बेटा, पेड़ पर बंदर, मेज़ पर पढ़ता लड़का, पुलिस चोर का पीछा"""
 
+LABEL_PROMPT_ENGLISH = """Identify this textbook illustration. Reply with ONLY a short name (2-5 words) in English.
+
+Rules:
+- MUST be English only (Father and son, Corn, Boy and book, Family picture).
+- NEVER use Hindi or Devanagari.
+- NEVER describe clothes, pose, glasses, smile, or camera angle.
+- NEVER write a full sentence.
+No punctuation, no Hindi, no extra text."""
+
 
 GENERIC_APPEARANCE_RE = re.compile(
     r"\b(man|woman|person|boy|girl|lady|gentleman|athlete|player|"
@@ -269,7 +278,7 @@ def heuristic_short_label_from_description(desc: str) -> str:
 
 async def short_label_for_image(image_path: str, *, hindi_only: bool = False) -> str:
     """Short 2-5 word label for picture-match questions."""
-    prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT
+    prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT_ENGLISH
     label = await _vision_call(image_path, prompt)
     return normalize_short_label(label) if label else ""
 
@@ -289,7 +298,7 @@ async def short_label_for_image_lowmem(
             fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
             os.close(fd)
             im.save(tmp_path, "JPEG", quality=85, optimize=True)
-        prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT
+        prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT_ENGLISH
         label = await _vision_call(tmp_path, prompt)
         return normalize_short_label(label) if label else ""
     except Exception as e:
@@ -332,7 +341,7 @@ def _jpeg_data_url_for_vision(image_path: str, max_px: int = 768) -> str | None:
 
 
 async def short_label_for_image_groq(
-    image_path: str, *, hindi_only: bool = True
+    image_path: str, *, hindi_only: bool = False
 ) -> str:
     """Label one textbook figure via Groq multimodal (Qwen). No local EasyOCR."""
     if not settings.GROQ_API_KEY:
@@ -341,7 +350,7 @@ async def short_label_for_image_groq(
     if not data_url:
         return ""
 
-    prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT
+    prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT_ENGLISH
     try:
         from openai import AsyncOpenAI
 
@@ -372,7 +381,10 @@ async def short_label_for_image_groq(
         label = normalize_short_label(raw) if raw else ""
         if not label or is_junk_label(label) or is_generic_appearance_label(label):
             return ""
-        if hindi_only and not re.search(r"[\u0900-\u097F]", label):
+        has_hindi = bool(re.search(r"[\u0900-\u097F]", label))
+        if hindi_only and not has_hindi:
+            return ""
+        if not hindi_only and has_hindi:
             return ""
         return label
     except Exception as e:

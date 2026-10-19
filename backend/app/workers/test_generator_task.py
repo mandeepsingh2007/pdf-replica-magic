@@ -7,7 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
 
-from app.workers.celery_app import celery_app
+try:
+    from app.workers.celery_app import celery_app
+except ModuleNotFoundError:
+    celery_app = None
 from app.db.database import async_session
 from app.models.task_job import TaskJob
 from app.models.question import Question
@@ -150,6 +153,11 @@ async def generate_test_async(request_data: dict, task_id: str):
             document_id = request_data.get("document_id")
             subject_id = request_data.get("subject_id")
             total_marks = int(request_data.get("total_marks", 50))
+            if total_marks not in (10, 20, 30, 50):
+                raise Exception("Choose 10, 20, 30, or 50 marks.")
+            school_name = " ".join(str(request_data.get("school_name") or "").split())
+            if not school_name:
+                raise Exception("Enter the school name.")
             include_types = request_data.get("include_types")
             chapter_ids = request_data.get("chapter_ids")
             questions_per_type = max(1, min(5, int(request_data.get("questions_per_type", 5))))
@@ -359,7 +367,7 @@ async def generate_test_async(request_data: dict, task_id: str):
                     )
                     include_types = [t for t in include_types if t != "picture_match"]
 
-            await update_task_progress(db, task_id, 85, "Assembling 50-mark test (5 questions per format)")
+            await update_task_progress(db, task_id, 85, f"Assembling {total_marks}-mark test (5 questions per format)")
 
             # Never assemble from another job's questions for the same document.
             question_pool = job_questions
@@ -457,6 +465,7 @@ async def generate_test_async(request_data: dict, task_id: str):
             test_json = structure_final_test_json(
                 selected_questions, questions_per_type=questions_per_type
             )
+            test_json["school_name"] = school_name
             selected_ids = [q["id"] for q in selected_questions]
 
             chapter_label = ""
@@ -471,7 +480,12 @@ async def generate_test_async(request_data: dict, task_id: str):
                 total_questions=len(selected_questions),
                 test_data=json.dumps(test_json),
                 question_ids=json.dumps(selected_ids),
-                assembly_metadata=json.dumps({"chapter_ids": chapter_ids or [], "chapter_scope": chapter_scope}),
+                assembly_metadata=json.dumps({
+                    "chapter_ids": chapter_ids or [],
+                    "chapter_scope": chapter_scope,
+                    "school_name": school_name,
+                    "total_marks": total_marks,
+                }),
                 status="completed"
             )
             db.add(final_test)
@@ -488,6 +502,9 @@ async def generate_test_async(request_data: dict, task_id: str):
             await update_task_progress(db, task_id, 0, f"Error: {str(e)}", status="failed")
 
 
-@celery_app.task(name="generate_questions_task")
 def generate_questions_task(request_data: dict, task_id: str):
     asyncio.run(generate_test_async(request_data, task_id))
+
+
+if celery_app is not None:
+    generate_questions_task = celery_app.task(name="generate_questions_task")(generate_questions_task)

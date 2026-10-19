@@ -243,6 +243,39 @@ body:has(.semester-portal) {
   margin-bottom: 1.5rem;
 }
 
+.semester-portal .sem-back-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.semester-portal .sem-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.semester-portal .sem-wait {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+
+.semester-portal .sem-spin {
+  animation: sem-spin 0.8s linear infinite;
+}
+
+@keyframes sem-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .semester-portal .sem-grid {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
@@ -299,6 +332,76 @@ body:has(.semester-portal) {
   flex: 1;
   width: 100%;
   border: 0;
+}
+
+.semester-portal button.action-card {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+  appearance: none;
+}
+
+.semester-portal button.sem-back {
+  font: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.semester-portal .sem-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 860px;
+}
+
+.semester-portal .sem-plan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1rem 1.15rem;
+}
+
+.semester-portal .sem-plan-row h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.semester-portal .sem-plan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.semester-portal .sem-plan-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.semester-portal .spin {
+  animation: sem-spin 0.8s linear infinite;
+}
+
+@keyframes sem-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 640px) {

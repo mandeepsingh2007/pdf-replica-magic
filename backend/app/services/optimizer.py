@@ -1,7 +1,5 @@
 from typing import Dict, List, Optional
 
-import pulp
-
 from app.services.question_generator import quota_for_type
 
 class ILPOptimizer:
@@ -20,6 +18,7 @@ class ILPOptimizer:
             ...
         ]
         """
+        import pulp
         if not candidate_questions:
             return None
 
@@ -149,20 +148,98 @@ def _pair_count(question: Dict) -> int:
     return 1
 
 
+def _fit_question_counts(selected: List[Dict], total_marks: int) -> List[Dict]:
+    """Drop extra questions when the total cannot fund every question at 1 mark.
+
+    Every selected format stays. A 50-mark paper already funds the full set, so
+    that paper is left unchanged.
+    """
+    grouped: List[tuple[str, List[Dict]]] = []
+    for question in selected:
+        q_type = question.get("type")
+        if grouped and grouped[-1][0] == q_type:
+            grouped[-1][1].append(question)
+        else:
+            grouped.append((q_type, [question]))
+
+    match_groups = [(q_type, qs) for q_type, qs in grouped if q_type in MATCH_TYPES]
+    other_groups = [(q_type, qs) for q_type, qs in grouped if q_type not in MATCH_TYPES]
+    if not other_groups:
+        return selected
+
+    natural_match = sum(_pair_count(question) for _, qs in match_groups for question in qs)
+    other_count = sum(len(qs) for _, qs in other_groups)
+    if natural_match + other_count <= total_marks:
+        return selected
+
+    if natural_match < total_marks:
+        per_format = (total_marks - natural_match) // len(other_groups)
+        per_format = min(per_format, min(len(qs) for _, qs in other_groups))
+    else:
+        per_format = 1 if total_marks > len(match_groups) else 0
+    if per_format < 1:
+        return selected
+
+    kept: List[Dict] = []
+    for _, qs in match_groups:
+        kept.extend(qs)
+    for _, qs in other_groups:
+        kept.extend(qs[:per_format])
+    return kept
+
+
+def _assign_match_marks(match_qs: List[Dict], budget: int) -> None:
+    """1 mark per pair when the budget allows. Otherwise share the budget."""
+    caps = [_pair_count(question) for question in match_qs]
+    if budget >= sum(caps):
+        for question, cap in zip(match_qs, caps):
+            question["marks"] = cap
+        return
+    if budget <= 0:
+        for question in match_qs:
+            question["marks"] = 0
+        return
+    marks = [0] * len(match_qs)
+    if budget >= len(match_qs):
+        marks = [1] * len(match_qs)
+        budget -= len(match_qs)
+    else:
+        for index in range(budget):
+            marks[index] = 1
+        budget = 0
+    while budget > 0:
+        progressed = False
+        for index, cap in enumerate(caps):
+            if budget <= 0:
+                break
+            if marks[index] < cap:
+                marks[index] += 1
+                budget -= 1
+                progressed = True
+        if not progressed:
+            break
+    for question, mark in zip(match_qs, marks):
+        question["marks"] = mark
+
+
 def allot_consistent_marks(selected: List[Dict], total_marks: int = 50) -> List[Dict]:
     """
-    Same format → same marks per question. Match-the-following gets 1 mark per pair.
-    Leftover extras go to whole formats (never split one MCQ at 3 and the next at 2).
-    Totals exactly `total_marks`.
+    Same format → same marks per question. Match-the-following gets 1 mark per pair
+    when the paper can afford it. Leftover extras go to whole formats (never split
+    one MCQ at 3 and the next at 2). Totals exactly `total_marks`.
     """
     if not selected:
         return selected
 
+    fitted = _fit_question_counts(selected, total_marks)
+    if fitted is not selected:
+        selected[:] = fitted
+
     match_qs = [q for q in selected if q.get("type") in MATCH_TYPES]
     other_qs = [q for q in selected if q.get("type") not in MATCH_TYPES]
 
-    for q in match_qs:
-        q["marks"] = _pair_count(q)
+    match_budget = total_marks - len(other_qs)
+    _assign_match_marks(match_qs, match_budget)
 
     leftover = total_marks - sum(int(q["marks"]) for q in match_qs)
     if leftover < 0:

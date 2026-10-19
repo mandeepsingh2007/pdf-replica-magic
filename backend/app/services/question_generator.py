@@ -664,6 +664,8 @@ async def _seeded_picture_label(img: dict, *, prefer_hindi: bool = False) -> str
         return ""
     if prefer_hindi and _label_needs_hindi(label):
         return await _translate_label_to_hindi(label) or ""
+    if not prefer_hindi and _DEVANAGARI_RE.search(label):
+        return ""
     return label
 
 
@@ -673,7 +675,8 @@ async def _label_selected_picture(img: dict, *, prefer_hindi: bool = False) -> s
     if path and os.path.isfile(path) and settings.GROQ_API_KEY:
         label = await short_label_for_image_groq(path, hindi_only=prefer_hindi)
         if label and not is_junk_label(label):
-            return label
+            if prefer_hindi or not _DEVANAGARI_RE.search(label):
+                return label
     return await _seeded_picture_label(img, prefer_hindi=prefer_hindi)
 
 

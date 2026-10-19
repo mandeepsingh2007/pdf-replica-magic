@@ -237,6 +237,7 @@ def build_attempt_payload(test: GeneratedTest, subject_name: str) -> dict:
         "document_id": test.document_id,
         "total_marks": test.total_marks,
         "total_questions": test.total_questions or len(all_q),
+        "school_name": " ".join(str(test_data.get("school_name") or "").split()),
         "test_data": student_sections,
     }
 
