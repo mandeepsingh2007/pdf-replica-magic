@@ -10,10 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-# EC2 free-tier disk cannot fit CUDA torch/triton. Force CPU wheels, then lock them.
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -r /app/backend/requirements.txt \
-    && pip install --no-cache-dir --force-reinstall --no-deps torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+# EC2 28G root cannot fit CUDA torch/triton. Install CPU torch first, skip easyocr's torch dep.
+RUN grep -viE '^\s*easyocr' /app/backend/requirements.txt > /tmp/requirements.noocr.txt \
+    && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r /tmp/requirements.noocr.txt \
+    && pip install --no-cache-dir easyocr --no-deps \
+    && pip install --no-cache-dir opencv-python-headless scikit-image python-bidi ninja Shapely pyclipper \
     && pip cache purge || true
 
 COPY backend /app/backend
