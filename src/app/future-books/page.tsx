@@ -48,7 +48,7 @@ export default function FutureBooksDashboardPage() {
         </Link>
         <div className="fb-header-right">
           <span className="fb-pill">A DIGITAL LEARNING LIBRARY</span>
-          <Link href="/future-books/login" className="fb-btn fb-btn-outline">
+          <Link href="/future-books/login" prefetch={false} className="fb-btn fb-btn-outline">
             Log Out
           </Link>
         </div>

@@ -59,11 +59,18 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
     const response = NextResponse.next();
-    response.cookies.set(FUTURE_COOKIE, "", {
-      path: "/",
-      maxAge: 0,
-      expires: new Date(0),
-    });
+    // Next.js Link prefetch of "Log Out" must not wipe the session
+    const isPrefetch =
+      request.headers.get("Next-Router-Prefetch") === "1" ||
+      request.headers.get("Purpose") === "prefetch" ||
+      request.headers.get("Sec-Purpose") === "prefetch";
+    if (!isPrefetch) {
+      response.cookies.set(FUTURE_COOKIE, "", {
+        path: "/",
+        maxAge: 0,
+        expires: new Date(0),
+      });
+    }
     return response;
   }
 

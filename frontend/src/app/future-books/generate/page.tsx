@@ -25,7 +25,7 @@ export default async function FutureBooksGeneratePage() {
         </Link>
         <div className="fb-header-right">
           <span className="fb-pill">TEST PAPER GENERATOR</span>
-          <Link href="/future-books/login" className="fb-btn fb-btn-outline">
+          <Link href="/future-books/login" prefetch={false} className="fb-btn fb-btn-outline">
             Log Out
           </Link>
         </div>
