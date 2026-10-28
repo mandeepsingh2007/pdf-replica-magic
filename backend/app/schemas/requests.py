@@ -4,7 +4,7 @@ from typing import Literal, Optional, List, Any
 class GenerateTestRequest(BaseModel):
     subject_id: int
     document_id: Optional[int] = None
-    total_marks: Literal[10, 20, 30, 50] = 50
+    total_marks: Literal[10, 20, 25, 30, 50, 60, 80] = 50
     school_name: str = Field(min_length=1, max_length=120)
 
     @field_validator("school_name")
@@ -17,7 +17,7 @@ class GenerateTestRequest(BaseModel):
     difficulty: str = Field(default="mixed")
     include_types: Optional[List[str]] = Field(
         default=None,
-        description="Question types: mcq, assertion_reason, true_false, fill_blank, word_match, picture_match",
+        description="Question types including SST formats: long_answer, source_based, map_work",
     )
     chapter_ids: Optional[List[str]] = Field(
         default=None,

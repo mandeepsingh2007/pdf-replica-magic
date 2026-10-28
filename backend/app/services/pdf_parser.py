@@ -3,7 +3,6 @@ import io
 import os
 import time
 import numpy as np
-from app.services.gemini_client import generate_gemini_content_sync, image_part
 from PIL import Image
 from app.core.config import settings
 from app.services.image_quality import split_illustration_file
@@ -35,60 +34,92 @@ Rules:
 _OCR_KEY_WARNED = False
 
 
-def ocr_page_with_gemini(
+def _groq_ocr_model() -> str:
+    model = (settings.LLM_MODEL or "").strip()
+    if "qwen" in model.lower():
+        return model
+    return "qwen/qwen3.8-27b"
+
+
+def _page_jpeg_data_url(page, max_px: int = 1280) -> str:
+    """Render PDF page to a compact JPEG data-URL for Groq vision OCR."""
+    import base64
+    from io import BytesIO
+
+    pix = page.get_pixmap(dpi=140)
+    img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    img.thumbnail((max_px, max_px))
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=85, optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
+
+
+def ocr_page_with_groq(
     page,
     page_num: int,
-    retries: int = 3,
+    retries: int = 4,
     *,
     fingerprint: str | None = None,
 ) -> str:
-    """Convert a PDF page to image and OCR it using Gemini Vision."""
-    global _OCR_KEY_WARNED
+    """OCR a textbook page via Groq vision (qwen/qwen3.8-27b)."""
     if fingerprint:
-        cached = read_cached_page(fingerprint, "gemini", page_num)
-        if cached:
-            return cached
-
-    if not settings.GEMINI_API_KEY:
+        # Reuse any prior OCR cache (including earlier Gemini runs) — no Gemini API.
+        for engine in ("groq", "gemini"):
+            cached = read_cached_page(fingerprint, engine, page_num)
+            if cached:
+                return cached
+    global _OCR_KEY_WARNED
+    if not settings.GROQ_API_KEY:
         if not _OCR_KEY_WARNED:
-            print(
-                "    OCR skipped: set GEMINI_API_KEY or GOOGLE_API_KEY in backend/.env",
-                flush=True,
-            )
+            print("    OCR skipped: set GROQ_API_KEY in backend/.env", flush=True)
             _OCR_KEY_WARNED = True
         return ""
 
-    pix = page.get_pixmap(dpi=150)
-    img_bytes = pix.tobytes("png")
+    data_url = _page_jpeg_data_url(page)
+    from openai import OpenAI
+
+    client = OpenAI(api_key=settings.GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
+    model = _groq_ocr_model()
 
     for attempt in range(retries):
         try:
-            response = generate_gemini_content_sync([
-                OCR_PROMPT,
-                image_part(img_bytes, "image/png"),
-            ])
-            text = response.text.strip()
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": OCR_PROMPT},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=4096,
+            )
+            text = (resp.choices[0].message.content or "").strip()
             if text:
                 if fingerprint:
-                    write_cached_page(fingerprint, "gemini", page_num, text)
+                    write_cached_page(fingerprint, "groq", page_num, text)
                 return text
         except Exception as e:
-            print(f"    OCR attempt {attempt+1} failed for page {page_num}: {e}")
-            err = str(e)
-            if "429" in err or "quota" in err.lower():
-                # Free-tier resets are slow; wait at least the hinted delay.
-                wait = 60
-                if "retry in" in err.lower():
-                    try:
-                        part = err.lower().split("retry in", 1)[1]
-                        wait = max(60, int(float("".join(ch for ch in part[:12] if ch.isdigit() or ch == "."))))
-                    except ValueError:
-                        wait = 60 * (attempt + 1)
-                time.sleep(wait)
-            else:
-                time.sleep(3)
-
+            print(f"    Groq OCR attempt {attempt+1} failed for page {page_num}: {e}", flush=True)
+            err = str(e).lower()
+            wait = 20 * (attempt + 1) if ("429" in err or "rate" in err) else 3
+            print(f"    Waiting {wait}s…", flush=True)
+            time.sleep(wait)
     return ""
+
+
+def ocr_page_text(
+    page,
+    page_num: int,
+    *,
+    fingerprint: str | None = None,
+) -> str:
+    """Page OCR via Groq vision only (qwen/qwen3.8-27b)."""
+    return ocr_page_with_groq(page, page_num, fingerprint=fingerprint)
 
 
 def _rects_overlap_or_near(a: fitz.Rect, b: fitz.Rect, gap: float) -> bool:
@@ -487,8 +518,8 @@ def _extract_text_blocks_from_doc(doc: fitz.Document) -> list[dict]:
                 "bbox": (0, 0, page.rect.width, page.rect.height),
             })
         else:
-            print(f"  Page {current}/{total_pages}: OCR via Gemini...", end=" ", flush=True)
-            ocr_text = ocr_page_with_gemini(page, current, fingerprint=fingerprint)
+            print(f"  Page {current}/{total_pages}: OCR via Groq...", end=" ", flush=True)
+            ocr_text = ocr_page_text(page, current, fingerprint=fingerprint)
             if ocr_text:
                 print(f"done ({len(ocr_text)} chars)", flush=True)
                 extracted_text_blocks.append({
@@ -496,7 +527,7 @@ def _extract_text_blocks_from_doc(doc: fitz.Document) -> list[dict]:
                     "text": ocr_text,
                     "bbox": (0, 0, page.rect.width, page.rect.height),
                 })
-                time.sleep(2)
+                time.sleep(1)
             else:
                 print("no text", flush=True)
 
@@ -504,7 +535,7 @@ def _extract_text_blocks_from_doc(doc: fitz.Document) -> list[dict]:
 
 
 def extract_pdf_text_only(file_path: str) -> list[dict]:
-    """Text + Gemini OCR only. No image extraction."""
+    """Text + Groq OCR only. No image extraction."""
     doc = fitz.open(file_path)
     try:
         blocks = _extract_text_blocks_from_doc(doc)
@@ -553,7 +584,7 @@ def extract_pdf_text_easyocr(file_path: str) -> list[dict]:
 def extract_pdf_data(file_path: str, output_image_dir: str):
     """
     Extracts text, structural elements, and images from a PDF using PyMuPDF.
-    Falls back to Gemini OCR for scanned/image-based pages.
+    Falls back to Groq vision OCR for scanned/image-based pages.
     Returns extracted structural text and a list of extracted image metadata.
     """
     if not os.path.exists(output_image_dir):

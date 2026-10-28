@@ -42,9 +42,9 @@ def _is_daily_quota_error(err: str) -> bool:
         or "quotaValue': '20'" in err
     )
 
-DESCRIBE_PROMPT = """Describe this Hindi Pathmala textbook illustration in 1-2 sentences.
-Use Hindi or English name for the main subject (person, animal, object, scene, diagram).
-Output ONLY the description."""
+DESCRIBE_PROMPT = """Describe this textbook illustration in 1-2 sentences.
+Name the main subject (person, animal, object, map, diagram, scene) in clear English or Hindi.
+Output ONLY the description — no preamble."""
 
 LABEL_PROMPT = """Identify this Hindi Pathmala textbook illustration. Reply with ONLY a short proper name (2-5 words) in Hindi Devanagari.
 
@@ -171,9 +171,46 @@ async def _vision_call(image_path: str, prompt: str, *, retries: int = 3) -> str
     logger.error("Vision API failed for %s after retries: %s", image_path, last_err)
     return ""
 
+async def _describe_image_groq(image_path: str) -> str:
+    """Describe one textbook figure via Groq vision (qwen)."""
+    if not settings.GROQ_API_KEY:
+        return ""
+    data_url = _jpeg_data_url_for_vision(image_path, max_px=1024)
+    if not data_url:
+        return ""
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=_groq_vision_model(),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": DESCRIBE_PROMPT},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=160,
+            ),
+            timeout=60,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        logger.warning("Groq vision describe failed for %s: %s", image_path, e)
+        return ""
+
+
 async def analyze_image_with_vlm(image_path: str) -> str:
-    """Full description of a textbook figure — used during PDF ingestion."""
-    result = await _vision_call(image_path, DESCRIBE_PROMPT)
+    """Full description of a textbook figure — Groq vision (ingestion)."""
+    result = await _describe_image_groq(image_path)
     return result or "Textbook illustration"
 
 
@@ -277,7 +314,10 @@ def heuristic_short_label_from_description(desc: str) -> str:
 
 
 async def short_label_for_image(image_path: str, *, hindi_only: bool = False) -> str:
-    """Short 2-5 word label for picture-match questions."""
+    """Short 2-5 word label for picture-match — Groq first, Gemini only if needed."""
+    groq_label = await short_label_for_image_groq(image_path, hindi_only=hindi_only)
+    if groq_label:
+        return groq_label
     prompt = LABEL_PROMPT_HINDI_STRICT if hindi_only else LABEL_PROMPT_ENGLISH
     label = await _vision_call(image_path, prompt)
     return normalize_short_label(label) if label else ""

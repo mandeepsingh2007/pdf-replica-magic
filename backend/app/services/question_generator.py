@@ -394,7 +394,7 @@ def _stem_for_avoid(q: dict) -> str:
     if t == "word_match":
         col = data.get("column_a") or []
         return "; ".join(str(x) for x in col[:3])[:140]
-    if t in ("short_answer", "answer_following", "oral"):
+    if t in ("short_answer", "long_answer", "source_based", "map_work", "answer_following", "oral"):
         return (data.get("question") or "").strip()[:140]
     if t == "true_false":
         return (data.get("statement") or "").strip()[:140]
@@ -944,6 +944,72 @@ async def generate_short_answer(
     return questions
 
 
+async def generate_long_answer(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} long-answer Social Science questions for {subject_name}. "
+        f"Each answer should need 4–6 sentences or clear points from the chapter. "
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} "
+        "Provide an ideal detailed answer and a grading rubric."
+    )
+    data = await generate_structured_output(
+        prompt, ShortAnswerListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "long_answer", "data": q_data, "score": score, "marks": 5})
+    elif data.get("error"):
+        logger.error("Long answer generation failed: %s", data.get("error"))
+    return questions
+
+
+async def generate_source_based(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} source-based Social Science questions for {subject_name}. "
+        "Each item must start with a short extract/source line from the chapter, then ask a question on it. "
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} "
+        "Put the extract inside the question text. Provide an ideal answer and grading rubric."
+    )
+    data = await generate_structured_output(
+        prompt, ShortAnswerListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "source_based", "data": q_data, "score": score, "marks": 3})
+    elif data.get("error"):
+        logger.error("Source-based generation failed: %s", data.get("error"))
+    return questions
+
+
+async def generate_map_work(
+    context: str, count: int, subject_name: str, chapter_scope: str | None = None
+) -> list[dict]:
+    prompt = (
+        f"Generate EXACTLY {count} map-work Social Science questions for {subject_name}. "
+        "Ask students to locate, label, or identify places/features from the chapter on a map. "
+        f"{PDF_ONLY_RULES} {CROSS_FORMAT_RULES} "
+        "Provide an ideal answer and a grading rubric."
+    )
+    data = await generate_structured_output(
+        prompt, ShortAnswerListSchema, context, subject_name, chapter_scope
+    )
+    questions = []
+    if "questions" in data:
+        for q_data in data["questions"]:
+            score = heuristic_quality_score(q_data, context)
+            questions.append({"type": "map_work", "data": q_data, "score": score, "marks": 3})
+    elif data.get("error"):
+        logger.error("Map work generation failed: %s", data.get("error"))
+    return questions
+
+
 async def generate_oral(
     context: str, count: int, subject_name: str, chapter_scope: str | None = None
 ) -> list[dict]:
@@ -1036,6 +1102,9 @@ VALID_QUESTION_TYPES = frozenset({
     "word_match",
     "picture_match",
     "short_answer",
+    "long_answer",
+    "source_based",
+    "map_work",
     "oral",
     "who_said",
     "answer_following",
@@ -1050,6 +1119,9 @@ DEFAULT_TYPE_COUNTS: dict[str, int] = {
     "true_false": 10,
     "fill_blank": 10,
     "short_answer": 5,
+    "long_answer": 5,
+    "source_based": 5,
+    "map_work": 5,
     "oral": 10,
     "who_said": 10,
     "answer_following": 10,
@@ -1079,10 +1151,13 @@ async def generate_all_types(
         ("True/False", generate_true_false, "true_false", 4),
         ("Fill in the Blank", generate_fill_blank, "fill_blank", 5),
         ("Short Answer", generate_short_answer, "short_answer", 6),
-        ("Oral", generate_oral, "oral", 7),
-        ("Who Said", generate_who_said, "who_said", 8),
-        ("Answer Following", generate_answer_following, "answer_following", 9),
-        ("Creative", generate_creative, "creative", 10),
+        ("Long Answer", generate_long_answer, "long_answer", 7),
+        ("Source Based", generate_source_based, "source_based", 8),
+        ("Map Work", generate_map_work, "map_work", 9),
+        ("Oral", generate_oral, "oral", 10),
+        ("Who Said", generate_who_said, "who_said", 11),
+        ("Answer Following", generate_answer_following, "answer_following", 12),
+        ("Creative", generate_creative, "creative", 13),
     ]
 
     if include_types:

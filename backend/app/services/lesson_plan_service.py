@@ -32,6 +32,8 @@ _SUBJECTS = (
     {"key": "mathematics", "label": "Mathematics", "api_name": "Mathematics"},
     {"key": "english", "label": "English", "api_name": "English"},
     {"key": "evs", "label": "Environmental Studies", "api_name": "EVS"},
+    # Future Books SST — api_name resolved per class as SST-{class_level}
+    {"key": "social_science", "label": "Social Science", "api_name": "SST"},
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,12 @@ logger = logging.getLogger(__name__)
 
 def _subject_by_key(key: str) -> dict | None:
     return next((item for item in _SUBJECTS if item["key"] == key), None)
+
+
+def _resolve_subject_name(subject_meta: dict, class_level: int) -> str:
+    if subject_meta["api_name"] == "SST":
+        return f"SST-{class_level}"
+    return subject_meta["api_name"]
 
 
 async def _complete_json(prompt: str, schema_model) -> dict:
@@ -137,15 +145,19 @@ async def generate_lesson_plan(
     if subject_meta is None:
         raise ValueError("Unknown subject.")
 
+    api_name = _resolve_subject_name(subject_meta, class_level)
     rows = (
         await db.execute(
-            select(Subject).where(Subject.name == subject_meta["api_name"], Subject.is_active == True)
+            select(Subject).where(Subject.name == api_name, Subject.is_active == True)
         )
     ).scalars().all()
-    subject = next(
-        (row for row in rows if f"class {class_level}" in (row.description or "").lower()),
-        None,
-    )
+    if subject_meta["api_name"] == "SST":
+        subject = rows[0] if rows else None
+    else:
+        subject = next(
+            (row for row in rows if f"class {class_level}" in (row.description or "").lower()),
+            None,
+        )
     if subject is None:
         raise LookupError(
             f"No Class {class_level} {subject_meta['label']} textbook is uploaded, "

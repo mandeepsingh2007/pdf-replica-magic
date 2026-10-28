@@ -41,6 +41,9 @@ const SECTION_KEYS = [
   "section_C_Objective",
   "section_D_MatchFollowing",
   "section_D_Subjective",
+  "section_long_answer",
+  "section_source_based",
+  "section_map_work",
   "section_oral",
   "section_who_said",
   "section_answer_following",
@@ -90,6 +93,9 @@ type SectionLetterKey =
   | "wordMatch"
   | "pictureMatch"
   | "subjective"
+  | "longAnswer"
+  | "sourceBased"
+  | "mapWork"
   | "oral"
   | "whoSaid"
   | "answerFollowing"
@@ -111,6 +117,9 @@ function assignSectionLetters(
   if (match.some((q) => q.type === "word_match")) letters.wordMatch = next();
   if (match.some((q) => q.type === "picture_match")) letters.pictureMatch = next();
   if (testData.section_D_Subjective?.length) letters.subjective = next();
+  if (testData.section_long_answer?.length) letters.longAnswer = next();
+  if (testData.section_source_based?.length) letters.sourceBased = next();
+  if (testData.section_map_work?.length) letters.mapWork = next();
   if (testData.section_oral?.length) letters.oral = next();
   if (testData.section_who_said?.length) letters.whoSaid = next();
   if (testData.section_answer_following?.length) letters.answerFollowing = next();
@@ -778,6 +787,78 @@ export default function TestPaperPage() {
               </>
             );
           })()}
+
+        {content?.section_long_answer?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.longAnswer, "Long Answer Type")}
+            questions={content.section_long_answer}
+            renderQuestion={(q, i) => {
+              const d = q.display as { question?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg">{d.question}</p>
+                  <textarea
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="Write your answer"
+                    rows={6}
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
+
+        {content?.section_source_based?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.sourceBased, "Source Based Questions")}
+            questions={content.section_source_based}
+            renderQuestion={(q, i) => {
+              const d = q.display as { question?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg whitespace-pre-wrap">{d.question}</p>
+                  <textarea
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="Write your answer"
+                    rows={4}
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
+
+        {content?.section_map_work?.length > 0 && (
+          <Section
+            title={sectionHeading(sectionLetters.mapWork, "Map Work")}
+            questions={content.section_map_work}
+            renderQuestion={(q, i) => {
+              const d = q.display as { question?: string };
+              const result = gradeMap.get(q.id);
+              return (
+                <QuestionCard key={q.id} number={i + 1} marks={q.marks} result={result}>
+                  <p className="mb-4 text-base leading-relaxed break-words sm:text-lg">{d.question}</p>
+                  <textarea
+                    value={answers[String(q.id)] || ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    disabled={!!gradeResult}
+                    placeholder="Write your map answer"
+                    rows={4}
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </QuestionCard>
+              );
+            }}
+          />
+        )}
 
         {content?.section_oral?.length > 0 && (
           <Section

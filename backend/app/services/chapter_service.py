@@ -29,6 +29,11 @@ TOC_PLAIN_ROW = re.compile(
     r"^(\d+)\.\s*(.+?)\s*\n(\d+)\s*$",
     re.MULTILINE,
 )
+# Future Books / SST contents: "1. Locating Places on the Earth 8"
+TOC_INLINE_ROW = re.compile(
+    r"^(\d+)\.\s+([A-Za-z][^\n]{3,80}?)\s+(\d+)\s*$",
+    re.MULTILINE,
+)
 CHAPTER_SINGLE_LINE = re.compile(
     r"^#\s*(\d+)\s+(.+?)\s*$",
     re.MULTILINE,
@@ -218,6 +223,23 @@ def _parse_plain_toc(full_text: str) -> list[ChapterInfo]:
     return chapters
 
 
+def _parse_inline_toc(full_text: str) -> list[ChapterInfo]:
+    """Parse SST-style TOC lines: '1. Chapter Title 8'."""
+    chapters: list[ChapterInfo] = []
+    seen_titles: set[str] = set()
+    seen_numbers: set[int] = set()
+    last_page = 0
+    region = _toc_region(full_text)
+    for num, title, page in TOC_INLINE_ROW.findall(region):
+        num_i, page_i = int(num), int(page)
+        if num_i in seen_numbers or page_i <= last_page:
+            continue
+        seen_numbers.add(num_i)
+        last_page = page_i
+        _append_chapter(chapters, seen_titles, num_i, title, page_i)
+    return chapters
+
+
 def _parse_heading_chapters(chunks: list) -> list[ChapterInfo]:
     found: dict[int, ChapterInfo] = {}
     
@@ -367,12 +389,16 @@ def extract_chapters(chunks: list, *, subject_name: str | None = None) -> list[C
     full_text = "\n\n".join(c.content for c in chunks if c.content)
     toc_md = _parse_toc(full_text)
     toc_plain = _parse_plain_toc(full_text)
-    toc_chapters = toc_plain if len(toc_plain) >= len(toc_md) else toc_md
+    toc_inline = _parse_inline_toc(full_text)
+    toc_chapters = max((toc_md, toc_plain, toc_inline), key=len)
     heading_chapters = _parse_heading_chapters(chunks)
     hindi_sections = _parse_hindi_section_starts(chunks)
 
+    # Prefer in-PDF heading pages for SST (TOC page numbers are printed, not PDF).
+    if (subject_name or "").upper().startswith("SST") and heading_chapters:
+        chapters = heading_chapters
     # Prefer TOC when it lists more chapters (Class 1 books use plain-text TOC)
-    if len(toc_chapters) >= len(heading_chapters) and toc_chapters:
+    elif len(toc_chapters) >= len(heading_chapters) and toc_chapters:
         chapters = toc_chapters
     elif heading_chapters:
         chapters = heading_chapters

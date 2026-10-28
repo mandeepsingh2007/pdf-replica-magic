@@ -127,7 +127,13 @@ def _pdf_section_blocks(test_data: dict) -> list[tuple[str, list[dict], str | No
             )
         )
     if test_data.get("section_D_Subjective"):
-        raw.append(("Subjective Questions", test_data["section_D_Subjective"], None))
+        raw.append(("Short Answer Type", test_data["section_D_Subjective"], None))
+    if test_data.get("section_long_answer"):
+        raw.append(("Long Answer Type", test_data["section_long_answer"], None))
+    if test_data.get("section_source_based"):
+        raw.append(("Source Based Questions", test_data["section_source_based"], None))
+    if test_data.get("section_map_work"):
+        raw.append(("Map Work", test_data["section_map_work"], None))
     if test_data.get("section_oral"):
         raw.append(("मौखिक प्रश्न / Oral Questions", test_data["section_oral"], None))
     if test_data.get("section_who_said"):
@@ -154,7 +160,7 @@ def _answer_key_stem(q_type: str, q_data: dict) -> str:
         return "Match the following (words)"
     if q_type == "picture_match":
         return "Match the picture with text"
-    if q_type in ("short_answer", "long_answer", "answer_following", "oral"):
+    if q_type in ("short_answer", "long_answer", "source_based", "map_work", "answer_following", "oral"):
         return q_data.get("question") or ""
     if q_type == "who_said":
         return q_data.get("quote") or ""
@@ -270,9 +276,14 @@ def _question_html(
     if q_type == "picture_match":
         return _picture_match_html(q_num, marks, display, image_alias)
 
-    if q_type in ("short_answer", "oral", "answer_following"):
+    if q_type in ("short_answer", "source_based", "map_work", "oral", "answer_following"):
         return _q_header(q_num, marks, _esc(display.get("question", ""))) + (
             '<div class="anspace"></div>'
+        )
+
+    if q_type == "long_answer":
+        return _q_header(q_num, marks, _esc(display.get("question", ""))) + (
+            '<div class="anspace tall"></div>'
         )
 
     if q_type == "who_said":

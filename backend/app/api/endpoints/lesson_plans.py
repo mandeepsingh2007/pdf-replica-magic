@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 class LessonPlanRequest(BaseModel):
-    class_level: int = Field(ge=1, le=5)
+    class_level: int = Field(ge=1, le=7)
     subject: str
     chapter_id: str = Field(min_length=1)
 

@@ -26,6 +26,9 @@ SECTION_KEYS = [
     ("section_C_Objective", "C"),
     ("section_D_MatchFollowing", "D"),
     ("section_D_Subjective", "D"),  # legacy tests
+    ("section_long_answer", "L"),
+    ("section_source_based", "S"),
+    ("section_map_work", "M"),
     ("section_oral", "O"),
     ("section_who_said", "W"),
     ("section_answer_following", "F"),
@@ -206,7 +209,7 @@ def strip_answer_keys(question: dict) -> dict:
         base["display"] = {"sentence_with_blank": q_data.get("sentence_with_blank", "")}
     elif q_type in ("word_match", "picture_match"):
         base["display"] = _build_match_display(q_data, q_type, q_id or 0)
-    elif q_type in ("short_answer", "long_answer", "answer_following"):
+    elif q_type in ("short_answer", "long_answer", "source_based", "map_work", "answer_following"):
         base["display"] = {"question": q_data.get("question", "")}
     elif q_type == "oral":
         base["display"] = {"question": q_data.get("question", "")}
@@ -388,7 +391,7 @@ def format_paper_answer(question: dict) -> str:
             lines.append(f"({left_key}) → ({right_key}) {right.get(right_key, '')}")
         return "\n".join(lines)
 
-    if q_type in ("short_answer", "long_answer", "answer_following", "oral"):
+    if q_type in ("short_answer", "long_answer", "source_based", "map_work", "answer_following", "oral"):
         return q_data.get("ideal_answer") or ""
     if q_type == "who_said":
         speaker = q_data.get("speaker") or ""
@@ -430,7 +433,7 @@ def format_correct_answer(
             if 0 <= b_idx < len(labels):
                 parts.append(f"Figure {fig_key} → {labels[b_idx]}")
         return "; ".join(parts)
-    if q_type in ("short_answer", "long_answer", "answer_following", "oral"):
+    if q_type in ("short_answer", "long_answer", "source_based", "map_work", "answer_following", "oral"):
         return q_data.get("ideal_answer", "")
     if q_type == "who_said":
         speaker = q_data.get("speaker") or ""
@@ -584,7 +587,7 @@ async def grade_test(
         user_answer = answers.get(q_id)
         correct_answer = format_correct_answer(q_type, q_data, q.get("id"))
 
-        if q_type in ("short_answer", "long_answer", "oral", "answer_following", "creative"):
+        if q_type in ("short_answer", "long_answer", "source_based", "map_work", "oral", "answer_following", "creative"):
             user_text = str(user_answer or "")
             heuristic = heuristic_short_answer_score(user_text, q_data, max_marks)
             if heuristic:

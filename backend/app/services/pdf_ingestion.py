@@ -66,9 +66,8 @@ async def process_pdf_async(document_id: int, task_id: str) -> None:
                             pass
 
             await update_task_progress(db, task_id, 30, "Extracting text and images from PDF")
-            text_blocks, images = extract_pdf_data(
-                file_path, image_out_dir, start_page=start_page
-            )
+            # shortcut: EXTRACT_START_PAGE only cleans old images; parser still reads the full PDF
+            text_blocks, images = extract_pdf_data(file_path, image_out_dir)
 
             await update_task_progress(
                 db, task_id, 50, f"Analyzing {len(images)} extracted images with AI"

@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 const AUTH_COOKIE = "tg_auth";
 const HINDI_COOKIE = "tg_hindi_auth";
+const FUTURE_COOKIE = "tg_future_auth";
 
 const PUBLIC_PATHS = [
   "/",
@@ -12,16 +13,19 @@ const PUBLIC_PATHS = [
   "/hindi",
   "/hindi/login",
   "/hindi/videos",
+  "/future-books/login",
 ];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isEnglishAuth = request.cookies.get(AUTH_COOKIE)?.value === "true";
   const isHindiAuth = request.cookies.get(HINDI_COOKIE)?.value === "true";
+  const isFutureAuth = request.cookies.get(FUTURE_COOKIE)?.value === "true";
 
   if (
     pathname.startsWith("/api/login") ||
     pathname.startsWith("/api/hindi-login") ||
+    pathname.startsWith("/api/future-login") ||
     pathname.startsWith("/api/backend")
   ) {
     return NextResponse.next();
@@ -35,8 +39,6 @@ export function middleware(request: NextRequest) {
       if (!url.searchParams.has("error")) url.searchParams.set("error", "invalid");
       return NextResponse.redirect(url);
     }
-    // Visiting login clears Hindi session. Prefer set-expire over cookies.delete —
-    // Next 16 was returning 404 for /hindi/login when delete() was used on next().
     const response = NextResponse.next();
     if (isHindiAuth) {
       response.cookies.set(HINDI_COOKIE, "", {
@@ -45,6 +47,23 @@ export function middleware(request: NextRequest) {
         expires: new Date(0),
       });
     }
+    return response;
+  }
+
+  if (pathname === "/future-books/login") {
+    const url = request.nextUrl.clone();
+    if (url.searchParams.has("password") || url.searchParams.has("id")) {
+      url.searchParams.delete("id");
+      url.searchParams.delete("password");
+      if (!url.searchParams.has("error")) url.searchParams.set("error", "invalid");
+      return NextResponse.redirect(url);
+    }
+    const response = NextResponse.next();
+    response.cookies.set(FUTURE_COOKIE, "", {
+      path: "/",
+      maxAge: 0,
+      expires: new Date(0),
+    });
     return response;
   }
 
@@ -59,6 +78,13 @@ export function middleware(request: NextRequest) {
     const response = NextResponse.next();
     response.cookies.delete(AUTH_COOKIE);
     return response;
+  }
+
+  if (pathname.startsWith("/future-books") && pathname !== "/future-books/login") {
+    if (!isFutureAuth) {
+      return NextResponse.redirect(new URL("/future-books/login", request.url));
+    }
+    return NextResponse.next();
   }
 
   if (
@@ -80,15 +106,15 @@ export function middleware(request: NextRequest) {
     (path) => pathname === path || pathname.startsWith(`${path}/`)
   );
 
-  if (isAuthenticatedPath(pathname) && (isEnglishAuth || isHindiAuth)) {
+  if (isAuthenticatedPath(pathname) && (isEnglishAuth || isHindiAuth || isFutureAuth)) {
     if (isEnglishAuth && pathname === "/gate") {
       return NextResponse.redirect(new URL("/upload", request.url));
     }
     return NextResponse.next();
   }
 
-  if (!isEnglishAuth && !isPublic && !pathname.startsWith("/hindi")) {
-    if (pathname.startsWith("/test") && isHindiAuth) {
+  if (!isEnglishAuth && !isPublic && !pathname.startsWith("/hindi") && !pathname.startsWith("/future-books")) {
+    if (pathname.startsWith("/test") && (isHindiAuth || isFutureAuth)) {
       return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/login", request.url));

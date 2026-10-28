@@ -41,6 +41,7 @@ export function NegraphicsHome() {
 
   const openSemesterPortal = () => router.push("/semester");
   const openHindiPortal = () => router.push("/hindi");
+  const openFutureBooksPortal = () => router.push("/future-books/login");
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
@@ -133,6 +134,41 @@ export function NegraphicsHome() {
                 <img
                   src={coverBooks}
                   alt="Hindi Pathmala digital portal"
+                  className="w-64 lg:w-96 h-auto"
+                  style={{
+                    transform: isLg
+                      ? "scale(2.2) translateX(-90px)"
+                      : "scale(1.5) translateX(-50px)",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="future-books-portal"
+          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 lg:mb-16"
+        >
+          <div className="border-2 lg:border-4 ng-border-primary">
+            <div className="ng-bg-primary ng-text-primary-fg py-6 lg:py-8 px-4 lg:px-8 flex flex-col lg:flex-row items-center justify-between">
+              <div className="flex-1 order-2 lg:order-1">
+                <h2 className="text-2xl lg:text-4xl font-bold mb-2 lg:mb-4">Future Books</h2>
+                <h2 className="text-2xl lg:text-4xl font-bold mb-4 lg:mb-6">Digital Contents</h2>
+                <p className="mb-3 lg:mb-4 max-w-2xl text-sm lg:text-base">
+                  Social Science test papers for Classes 6 and 7 — chapter-wise questions from the
+                  Future Books textbooks, with school name and answer key included.
+                </p>
+                <p className="mb-6 lg:mb-8 max-w-2xl text-sm lg:text-base">
+                  Teachers sign in to generate MCQs, map work, source-based questions, and more from
+                  the uploaded SST books.
+                </p>
+                <CTAButton onClick={openFutureBooksPortal}>OPEN PORTAL</CTAButton>
+              </div>
+              <div className="flex-shrink-0 lg:ml-8 mb-6 lg:mb-0 order-1 lg:order-2">
+                <img
+                  src={layoutBooks}
+                  alt="Future Books digital portal"
                   className="w-64 lg:w-96 h-auto"
                   style={{
                     transform: isLg

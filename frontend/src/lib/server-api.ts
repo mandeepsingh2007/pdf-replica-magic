@@ -9,7 +9,7 @@ export type ServerSubject = {
 };
 
 export async function fetchSubjectsOnServer(
-  track?: "hindi" | "english"
+  track?: "hindi" | "english" | "future"
 ): Promise<{
   subjects: ServerSubject[];
   error: string | null;

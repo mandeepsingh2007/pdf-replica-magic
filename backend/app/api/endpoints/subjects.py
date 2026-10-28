@@ -13,17 +13,28 @@ from app.services.chapter_service import extract_chapters
 
 router = APIRouter()
 
+
+def _is_future_subject(name: str | None) -> bool:
+    return (name or "").upper().startswith("SST-")
+
+
 @router.get("", response_model=List[SubjectResponse])
 async def list_subjects(track: str | None = None, db: AsyncSession = Depends(get_db)):
-    """List active subjects. track=hindi | english filters Pathmala vs Semester Book."""
+    """List active subjects. track=hindi | english | future filters each portal."""
     ensure_orm_loaded()
     query = select(Subject).where(Subject.is_active == True)
     result = await db.execute(query)
     subjects = result.scalars().all()
     if track == "hindi":
         subjects = [s for s in subjects if (s.name or "").lower().startswith("hindi")]
+    elif track == "future":
+        subjects = [s for s in subjects if _is_future_subject(s.name)]
     elif track == "english":
-        subjects = [s for s in subjects if not (s.name or "").lower().startswith("hindi")]
+        subjects = [
+            s
+            for s in subjects
+            if not (s.name or "").lower().startswith("hindi") and not _is_future_subject(s.name)
+        ]
     return subjects
 
 @router.get("/{subject_id}", response_model=SubjectResponse)

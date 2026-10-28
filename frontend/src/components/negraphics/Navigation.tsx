@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 const navItems = [
   { id: "semester-book-portal", label: "Semester Book Portal" },
   { id: "hindi-pathmala-portal", label: "Hindi Pathmala" },
+  { id: "future-books-portal", label: "Future Books" },
   { id: "meet-us", label: "Meet Us" },
   { id: "cover-design", label: "Cover Design" },
   { id: "layout-design", label: "Layout Design" },
@@ -44,6 +45,10 @@ export function Navigation() {
     }
     if (id === "hindi-pathmala-portal") {
       router.push("/hindi");
+      return;
+    }
+    if (id === "future-books-portal") {
+      router.push("/future-books/login");
       return;
     }
     const element = document.getElementById(id);

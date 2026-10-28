@@ -153,7 +153,7 @@ async def generate_test_async(request_data: dict, task_id: str):
             document_id = request_data.get("document_id")
             subject_id = request_data.get("subject_id")
             total_marks = int(request_data.get("total_marks", 50))
-            if total_marks not in (10, 20, 30, 50):
+            if total_marks not in (10, 20, 30, 50, 25, 60, 80):
                 raise Exception("Choose 10, 20, 30, or 50 marks.")
             school_name = " ".join(str(request_data.get("school_name") or "").split())
             if not school_name:
