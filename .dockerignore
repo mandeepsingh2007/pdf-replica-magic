@@ -17,5 +17,7 @@ docs
 backend/_hindi*
 backend/_fixed*
 backend/_*preview*
-backend/*.txt
+backend/chapter_*.txt
+backend/hindi_*.txt
+backend/chunk_*.txt
 backend/tests
