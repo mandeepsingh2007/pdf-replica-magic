@@ -10,7 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+# EC2 free-tier disk cannot fit CUDA torch/triton. Force CPU wheels, then lock them.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && pip install --no-cache-dir --force-reinstall --no-deps torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip cache purge || true
 
 COPY backend /app/backend
 COPY ["test pdf", "/app/test pdf"]

@@ -6,7 +6,16 @@
 **/.env
 **/uploads/*
 frontend
+public
+src
+tmp
+docs
 .agents
 .cursor
 *.md
 !deploy/*.md
+backend/_hindi*
+backend/_fixed*
+backend/_*preview*
+backend/*.txt
+backend/tests
