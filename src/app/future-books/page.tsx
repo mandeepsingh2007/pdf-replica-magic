@@ -64,22 +64,14 @@ export default function FutureBooksDashboardPage() {
         </div>
 
         <div className="fb-dashboard-grid">
-          {TILES.map((tile) =>
-            tile.href ? (
-              <Link key={tile.title} href={tile.href} className="fb-tile">
-                <span className="fb-symbol">{tile.symbol}</span>
-                <span className="fb-tile-title">{tile.title}</span>
-                <span className="fb-tile-desc">{tile.desc}</span>
-                <span className="fb-tile-arrow">↗</span>
-              </Link>
-            ) : (
-              <div key={tile.title} className="fb-tile disabled" aria-disabled="true">
-                <span className="fb-symbol">{tile.symbol}</span>
-                <span className="fb-tile-title">{tile.title}</span>
-                <span className="fb-tile-desc">{tile.desc} (coming soon)</span>
-              </div>
-            )
-          )}
+          {TILES.map((tile) => (
+            <Link key={tile.title} href={tile.href} className="fb-tile">
+              <span className="fb-symbol">{tile.symbol}</span>
+              <span className="fb-tile-title">{tile.title}</span>
+              <span className="fb-tile-desc">{tile.desc}</span>
+              <span className="fb-tile-arrow">↗</span>
+            </Link>
+          ))}
         </div>
       </main>
 
