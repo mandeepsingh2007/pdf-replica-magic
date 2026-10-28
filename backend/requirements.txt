@@ -8,7 +8,8 @@ uvicorn[standard]>=0.34.0
 python-multipart>=0.0.20      # File upload support
 
 # --- Database (PostgreSQL + ORM) ---
-sqlalchemy>=2.0.41
+sqlalchemy[asyncio]>=2.0.41
+greenlet>=3.0.0               # required by sqlalchemy asyncio
 alembic>=1.16.1
 psycopg2-binary>=2.9.10       # PostgreSQL driver
 aiosqlite>=0.21.0             # SQLite async driver (for local dev)
